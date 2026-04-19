@@ -32,7 +32,7 @@ export interface DocEntry {
 }
 
 const DEFAULT_CONTENT = `
-<h1>📝 Bem-vindo ao Editor de Texto Pro</h1>
+<h1>📝 Bem-vindo ao DocFlex</h1>
 <p>Este é um editor de texto completo e profissional com suporte a uma grande variedade de formatações e recursos avançados.</p>
 
 <h2>✨ Recursos disponíveis</h2>
@@ -264,9 +264,9 @@ export default function App() {
   // Sync title with document metadata and browser tab
   useEffect(() => {
     if (view === 'editor') {
-       document.title = `${documentTitle} — Editor Pro`
+       document.title = `${documentTitle} — DocFlex`
     } else {
-       document.title = 'Editor Pro — Meus Documentos'
+       document.title = 'DocFlex — Meus Documentos'
     }
   }, [documentTitle, view])
 
@@ -452,7 +452,7 @@ ${editor.getHTML()}
              <span className="text-xl text-white">📝</span>
           </div>
           <div className="flex flex-col">
-            <span className="font-extrabold text-lg tracking-tight leading-none bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>Editor Pro</span>
+            <span className="font-extrabold text-lg tracking-tight leading-none bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>DocFlex</span>
             <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-0.5">Workspace</span>
           </div>
         </div>

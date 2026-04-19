@@ -49,7 +49,7 @@ export default function Dashboard({
              <span className="text-xl text-white">📝</span>
           </div>
           <div className="flex flex-col">
-            <span className="font-extrabold text-lg tracking-tight leading-none bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>Editor Pro</span>
+            <span className="font-extrabold text-lg tracking-tight leading-none bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>DocFlex</span>
             <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-0.5">Meus Documentos</span>
           </div>
         </div>

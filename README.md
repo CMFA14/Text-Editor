@@ -1,10 +1,10 @@
-# 📝 Editor Pro — Gestão de Documentos em Tempo Real
+# 📝 DocFlex — Gestão de Documentos em Tempo Real
 
 > [!IMPORTANT]
 > **Status do Projeto**: 🚀 **EM PRODUÇÃO**
 > O sistema está operacional e em fase ativa de evolução de funcionalidades.
 
-O **Editor Pro** é um editor de texto rico e moderno desenvolvido com **React** e **Tiptap**, projetado para oferecer uma experiência de escrita fluida e profissional diretamente no navegador. Com um sistema robusto de gerenciamento de múltiplos documentos, ele permite que você crie, organize e exporte seus textos com uma estética premium e minimalista.
+O **DocFlex** é um editor de texto rico e moderno desenvolvido com **React** e **Tiptap**, projetado para oferecer uma experiência de escrita fluida e profissional diretamente no navegador. Com um sistema robusto de gerenciamento de múltiplos documentos, ele permite que você crie, organize e exporte seus textos com uma estética premium e minimalista.
 
 ## ✨ Principais Funcionalidades
 
