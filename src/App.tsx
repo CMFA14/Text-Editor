@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
+import { markdownToHtml } from './utils/markdown'
+import { sanitizeHtml } from './utils/sanitize'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import TextAlign from '@tiptap/extension-text-align'
@@ -30,76 +32,6 @@ export interface DocEntry {
   content: string
   lastModified: number
 }
-
-const DEFAULT_CONTENT = `
-<h1>📝 Bem-vindo ao DocFlex</h1>
-<p>Este é um editor de texto completo e profissional com suporte a uma grande variedade de formatações e recursos avançados.</p>
-
-<h2>✨ Recursos disponíveis</h2>
-<ul>
-  <li><strong>Negrito</strong>, <em>itálico</em>, <u>sublinhado</u> e <s>tachado</s></li>
-  <li>Títulos de H1 a H6</li>
-  <li>Múltiplas fontes e tamanhos</li>
-  <li>Cores de texto e realce</li>
-  <li>Alinhamento de texto</li>
-  <li>Listas numeradas e com marcadores</li>
-</ul>
-
-<h2>📋 Lista de tarefas</h2>
-<ul data-type="taskList">
-  <li data-type="taskItem" data-checked="true">Criar um editor rico em recursos</li>
-  <li data-type="taskItem" data-checked="true">Adicionar suporte a tabelas</li>
-  <li data-type="taskItem" data-checked="false">Exportar para HTML, TXT e Markdown</li>
-  <li data-type="taskItem" data-checked="false">Localizar e substituir texto</li>
-</ul>
-
-<h2>💬 Exemplo de citação</h2>
-<blockquote>
-  <p>"A simplicidade é a sofisticação máxima." — Leonardo da Vinci</p>
-</blockquote>
-
-<h2>📊 Exemplo de tabela</h2>
-<table>
-  <tbody>
-    <tr>
-      <th>Recurso</th>
-      <th>Descrição</th>
-      <th>Status</th>
-    </tr>
-    <tr>
-      <td>Formatação de texto</td>
-      <td>Negrito, itálico, sublinhado e mais</td>
-      <td>✅ Disponível</td>
-    </tr>
-    <tr>
-      <td>Tabelas</td>
-      <td>Criação e edição de tabelas</td>
-      <td>✅ Disponível</td>
-    </tr>
-    <tr>
-      <td>Imagens</td>
-      <td>Inserção por URL ou arquivo local</td>
-      <td>✅ Disponível</td>
-    </tr>
-    <tr>
-      <td>Exportação</td>
-      <td>HTML, TXT e Markdown</td>
-      <td>✅ Disponível</td>
-    </tr>
-  </tbody>
-</table>
-
-<h2>🖥️ Código</h2>
-<p>Você pode inserir código inline como <code>console.log("Hello World")</code> ou blocos de código:</p>
-<pre><code>function saudacao(nome: string): string {
-  return \`Olá, \${nome}! Bem-vindo ao Editor Pro.\`
-}
-
-const msg = saudacao("Desenvolvedor")
-console.log(msg)</code></pre>
-
-<p>Comece a editar este documento ou apague tudo e crie o seu próprio! 🚀</p>
-`
 
 function htmlToMarkdown(html: string): string {
   const div = document.createElement('div')
@@ -239,27 +171,55 @@ export default function App() {
     setDocuments(docs)
   }, [])
 
-  // Auto-save logic
+  // Stable refs so saveCurrent doesn't churn
+  const currentDocIdRef = useRef(currentDocId)
+  const documentTitleRef = useRef(documentTitle)
+  useEffect(() => { currentDocIdRef.current = currentDocId }, [currentDocId])
+  useEffect(() => { documentTitleRef.current = documentTitle }, [documentTitle])
+
+  const saveCurrent = useCallback(() => {
+    if (!editor || !currentDocIdRef.current) return
+    const html = editor.getHTML()
+    const id = currentDocIdRef.current
+    const title = documentTitleRef.current
+    setDocuments(prev => {
+      const newDocs = prev.map(d =>
+        d.id === id
+          ? { ...d, content: html, title, lastModified: Date.now() }
+          : d
+      )
+      try {
+        localStorage.setItem('editor_docs', JSON.stringify(newDocs))
+      } catch (err) {
+        console.error('Falha ao gravar no localStorage', err)
+      }
+      return newDocs
+    })
+    setSaved(true)
+    setLastSaved(new Date())
+  }, [editor])
+
+  // Auto-save interval
   useEffect(() => {
     if (!editor || !currentDocId || view !== 'editor') return
-
-    const interval = setInterval(() => {
-      const html = editor.getHTML()
-      setDocuments(prev => {
-        const newDocs = prev.map(d =>
-          d.id === currentDocId
-            ? { ...d, content: html, title: documentTitle, lastModified: Date.now() }
-            : d
-        )
-        localStorage.setItem('editor_docs', JSON.stringify(newDocs))
-        return newDocs
-      })
-      setSaved(true)
-      setLastSaved(new Date())
-    }, 3000)
-
+    const interval = setInterval(saveCurrent, 3000)
     return () => clearInterval(interval)
-  }, [editor, currentDocId, view, documentTitle])
+  }, [editor, currentDocId, view, saveCurrent])
+
+  // Save on blur (user switches window/focus away from editor)
+  useEffect(() => {
+    if (!editor) return
+    const onBlur = () => saveCurrent()
+    editor.on('blur', onBlur)
+    return () => { editor.off('blur', onBlur) }
+  }, [editor, saveCurrent])
+
+  // Save before unload / tab close
+  useEffect(() => {
+    const onBeforeUnload = () => saveCurrent()
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [saveCurrent])
 
   // Sync title with document metadata and browser tab
   useEffect(() => {
@@ -297,6 +257,10 @@ export default function App() {
   const handleOpen = useCallback((id: string) => {
     const doc = documents.find(d => d.id === id)
     if (doc && editor) {
+      // Persist the doc currently open before switching
+      if (currentDocIdRef.current && currentDocIdRef.current !== id) {
+        saveCurrent()
+      }
       setCurrentDocId(id)
       setDocumentTitle(doc.title)
       editor.commands.setContent(doc.content)
@@ -304,7 +268,7 @@ export default function App() {
       setSaved(true)
       setLastSaved(null)
     }
-  }, [documents, editor])
+  }, [documents, editor, saveCurrent])
 
   const handleDelete = useCallback((id: string) => {
     if (confirm('Tem certeza que deseja excluir este documento? Esta ação não pode ser desfeita.')) {
@@ -315,65 +279,67 @@ export default function App() {
   }, [documents])
 
   const handleImport = useCallback(async (file: File) => {
-    const text = await file.text()
-    let content = text
+    try {
+      const text = await file.text()
+      const lower = file.name.toLowerCase()
+      let content: string
 
-    // Simple check to see if it's HTML or plain text
-    if (!file.name.endsWith('.html') && !file.name.endsWith('.md')) {
-      content = `<p>${text.replace(/\n/g, '</p><p>')}</p>`
-    }
+      if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
+        content = sanitizeHtml(markdownToHtml(text))
+      } else if (lower.endsWith('.html') || lower.endsWith('.htm')) {
+        content = sanitizeHtml(text)
+      } else {
+        const escaped = text
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+        content = `<p>${escaped.replace(/\n/g, '</p><p>')}</p>`
+      }
 
-    const newDoc: DocEntry = {
-      id: crypto.randomUUID(),
-      title: file.name.split('.').slice(0, -1).join('.') || 'Documento Importado',
-      content: content,
-      lastModified: Date.now()
+      const newDoc: DocEntry = {
+        id: crypto.randomUUID(),
+        title: file.name.split('.').slice(0, -1).join('.') || 'Documento Importado',
+        content,
+        lastModified: Date.now(),
+      }
+      const newDocs = [newDoc, ...documents]
+      setDocuments(newDocs)
+      try {
+        localStorage.setItem('editor_docs', JSON.stringify(newDocs))
+      } catch (err) {
+        console.error('Falha ao gravar no localStorage', err)
+      }
+      handleOpen(newDoc.id)
+    } catch (err) {
+      console.error('Falha ao importar arquivo', err)
+      alert(`Não foi possível importar "${file.name}". O arquivo pode estar corrompido ou em um formato não suportado.`)
     }
-    const newDocs = [newDoc, ...documents]
-    setDocuments(newDocs)
-    localStorage.setItem('editor_docs', JSON.stringify(newDocs))
-    handleOpen(newDoc.id)
   }, [documents, handleOpen])
 
   const handleBackToDashboard = useCallback(() => {
-    if (!saved && editor) {
-        // Force save before leaving
-        const html = editor.getHTML()
-        const newDocs = documents.map(d =>
-          d.id === currentDocId ? { ...d, content: html, title: documentTitle, lastModified: Date.now() } : d
-        )
-        setDocuments(newDocs)
-        localStorage.setItem('editor_docs', JSON.stringify(newDocs))
-    }
+    saveCurrent()
     setView('dashboard')
     setCurrentDocId(null)
-  }, [saved, editor, currentDocId, documents, documentTitle])
+  }, [saveCurrent])
 
-  // Keyboard shortcuts
+  // Keep fresh callbacks in refs so the keydown listener can stay stable
+  const handleCreateRef = useRef(handleCreate)
+  const saveCurrentRef = useRef(saveCurrent)
+  useEffect(() => { handleCreateRef.current = handleCreate }, [handleCreate])
+  useEffect(() => { saveCurrentRef.current = saveCurrent }, [saveCurrent])
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey)) {
-        if (e.key === 'h' || e.key === 'H') { e.preventDefault(); setShowFind(v => !v) }
-        if (e.key === 'p' || e.key === 'P') { e.preventDefault(); window.print() }
-        if (e.key === 'n' || e.key === 'N') { e.preventDefault(); handleCreate() }
-        if (e.key === 's' || e.key === 'S') {
-          e.preventDefault()
-          if (editor && currentDocId) {
-            const html = editor.getHTML()
-            const newDocs = documents.map(d =>
-              d.id === currentDocId ? { ...d, content: html, title: documentTitle, lastModified: Date.now() } : d
-            )
-            setDocuments(newDocs)
-            localStorage.setItem('editor_docs', JSON.stringify(newDocs))
-            setSaved(true)
-            setLastSaved(new Date())
-          }
-        }
-      }
+      if (!(e.ctrlKey || e.metaKey)) return
+      const key = e.key.toLowerCase()
+      if (key === 'h') { e.preventDefault(); setShowFind(v => !v) }
+      else if (key === 'p') { e.preventDefault(); window.print() }
+      else if (key === 'n') { e.preventDefault(); handleCreateRef.current() }
+      else if (key === 's') { e.preventDefault(); saveCurrentRef.current() }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [editor, handleCreate, documents, currentDocId, documentTitle])
+  }, [])
 
   const handleExportHTML = useCallback(() => {
     if (!editor) return
@@ -501,16 +467,7 @@ ${editor.getHTML()}
 
            {/* Save button mockup (the editor auto-saves, but a button feels "Pro") */}
            <button
-              onClick={() => {
-                if (editor && currentDocId) {
-                  const html = editor.getHTML()
-                  const newDocs = documents.map(d => d.id === currentDocId ? { ...d, content: html, title: documentTitle, lastModified: Date.now() } : d)
-                  setDocuments(newDocs)
-                  localStorage.setItem('editor_docs', JSON.stringify(newDocs))
-                  setSaved(true)
-                  setLastSaved(new Date())
-                }
-              }}
+              onClick={saveCurrent}
               className="hidden sm:flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
            >
              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
@@ -533,8 +490,6 @@ ${editor.getHTML()}
       {/* ── Toolbar Area ────────────────────────────── */}
       <MenuBar
         editor={editor}
-        wordCount={wordCount}
-        charCount={charCount}
         onToggleFind={() => setShowFind(v => !v)}
         onExportHTML={handleExportHTML}
         onExportTXT={handleExportTXT}

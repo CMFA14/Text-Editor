@@ -1,10 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Editor } from '@tiptap/react'
+import { isSafeUrl } from '../utils/sanitize'
 
 interface MenuBarProps {
   editor: Editor | null
-  wordCount: number
-  charCount: number
   onToggleFind: () => void
   onExportHTML: () => void
   onExportTXT: () => void
@@ -54,8 +53,6 @@ const FONT_FAMILIES = [
   { label: 'Times New Roman', value: 'Times New Roman, serif' },
   { label: 'Courier New', value: 'Courier New, monospace' },
 ]
-
-const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 48, 60, 72]
 
 const HEADINGS: { label: string; level?: number }[] = [
   { label: 'Parágrafo' },
@@ -121,7 +118,7 @@ function ToolbarBtn({
 }
 
 export default function MenuBar({
-  editor, wordCount, charCount,
+  editor,
   onToggleFind, onExportHTML, onExportTXT, onExportMD, onPrint, onNew,
   zoom, onZoomChange
 }: MenuBarProps) {
@@ -167,19 +164,25 @@ export default function MenuBar({
   const applyLink = () => {
     if (!linkUrl) {
       editor.chain().focus().unsetLink().run()
+    } else if (!isSafeUrl(linkUrl)) {
+      alert('URL inválida. Use http://, https:// ou mailto:')
+      return
     } else {
-      editor.chain().focus().setLink({ href: linkUrl, target: '_blank' }).run()
+      editor.chain().focus().setLink({ href: linkUrl.trim(), target: '_blank' }).run()
     }
     setShowLinkModal(false)
     setLinkUrl('')
   }
 
   const applyImage = () => {
-    if (imageUrl) {
-      editor.chain().focus().setImage({ src: imageUrl }).run()
-      setShowImageModal(false)
-      setImageUrl('')
+    if (!imageUrl) return
+    if (!isSafeUrl(imageUrl)) {
+      alert('URL de imagem inválida. Use http:// ou https://')
+      return
     }
+    editor.chain().focus().setImage({ src: imageUrl.trim() }).run()
+    setShowImageModal(false)
+    setImageUrl('')
   }
 
   const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -317,7 +320,19 @@ export default function MenuBar({
 
         <div className="flex items-center bg-[var(--bg-ui)] rounded-lg h-9 overflow-hidden">
           <button onMouseDown={e => {e.preventDefault(); applyFontSize(Math.max(fontSize-1, 8))}} className="px-2 h-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"><Icons.Minus /></button>
-          <input type="text" value={fontSize} onChange={e => applyFontSize(parseInt(e.target.value)||16)} className="w-8 h-full bg-transparent text-center border-none text-xs font-bold focus:ring-0" />
+          <input
+            type="number"
+            min={8}
+            max={72}
+            step={1}
+            value={fontSize}
+            onChange={e => {
+              const parsed = parseInt(e.target.value, 10)
+              if (Number.isFinite(parsed)) applyFontSize(Math.min(Math.max(parsed, 8), 72))
+            }}
+            aria-label="Tamanho da fonte"
+            className="w-10 h-full bg-transparent text-center border-none text-xs font-bold focus:ring-0 appearance-none"
+          />
           <button onMouseDown={e => {e.preventDefault(); applyFontSize(Math.min(fontSize+1, 72))}} className="px-2 h-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"><Icons.Plus /></button>
         </div>
 
