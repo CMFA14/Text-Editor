@@ -8,6 +8,7 @@ interface MenuBarProps {
   onExportHTML: () => void
   onExportTXT: () => void
   onExportMD: () => void
+  onExportPDF: () => void
   onPrint: () => void
   onNew: () => void
   zoom: number
@@ -119,7 +120,7 @@ function ToolbarBtn({
 
 export default function MenuBar({
   editor,
-  onToggleFind, onExportHTML, onExportTXT, onExportMD, onPrint, onNew,
+  onToggleFind, onExportHTML, onExportTXT, onExportMD, onExportPDF, onPrint, onNew,
   zoom, onZoomChange
 }: MenuBarProps) {
   const [showColorPicker, setShowColorPicker] = useState(false)
@@ -221,7 +222,7 @@ export default function MenuBar({
     <div className="flex flex-col glass-panel border-b border-white select-none relative z-50" onClick={closeAll}>
 
       {/* ── Menu Bar Top ───────────────────────────── */}
-      <div className="flex items-center gap-1 px-4 py-1.5 border-b border-white/20 text-sm font-medium">
+      <div className="flex items-center gap-1 px-2 md:px-4 py-1.5 border-b border-white/20 text-sm font-medium overflow-x-auto scrollbar-thin">
         {/* File menu */}
         <div className="relative">
           <button
@@ -233,6 +234,7 @@ export default function MenuBar({
               <MenuItem label="Novo documento" shortcut="Ctrl+N" onClick={() => { onNew(); closeAll() }} />
               <MenuItem label="Imprimir" shortcut="Ctrl+P" onClick={() => { onPrint(); closeAll() }} />
               <div className="h-px bg-slate-200 dark:bg-slate-700 my-1 mx-2" />
+              <MenuItem label="Exportar como PDF" onClick={() => { onExportPDF(); closeAll() }} />
               <MenuItem label="Exportar como HTML" onClick={() => { onExportHTML(); closeAll() }} />
               <MenuItem label="Exportar como TXT" onClick={() => { onExportTXT(); closeAll() }} />
               <MenuItem label="Exportar como Markdown" onClick={() => { onExportMD(); closeAll() }} />
@@ -281,14 +283,14 @@ export default function MenuBar({
 
         {/* Zoom Controls */}
         <div className="flex items-center gap-2 bg-[var(--bg-ui)] rounded-lg px-2 py-0.5 border border-slate-200 dark:border-slate-700">
-           <button onClick={() => onZoomChange(Math.max(zoom-10, 50))} className="p-1 hover:text-indigo-500 transition-colors"><Icons.Minus /></button>
-           <span className="text-xs w-10 text-center font-bold">{zoom}%</span>
-           <button onClick={() => onZoomChange(Math.min(zoom+10, 200))} className="p-1 hover:text-indigo-500 transition-colors"><Icons.Plus /></button>
+           <button onClick={() => onZoomChange(Math.max(zoom-10, 50))} className="p-1 hover:text-indigo-500 transition-colors" aria-label="Diminuir zoom" title="Diminuir zoom"><Icons.Minus /></button>
+           <span className="text-xs w-10 text-center font-bold" aria-live="polite">{zoom}%</span>
+           <button onClick={() => onZoomChange(Math.min(zoom+10, 200))} className="p-1 hover:text-indigo-500 transition-colors" aria-label="Aumentar zoom" title="Aumentar zoom"><Icons.Plus /></button>
         </div>
       </div>
 
       {/* ── Toolbar ─────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-1 px-4 py-2 border-b border-white/10">
+      <div className="flex flex-wrap items-center gap-1 px-2 md:px-4 py-2 border-b border-white/10">
 
         {/* History */}
         <div className="flex gap-0.5">
