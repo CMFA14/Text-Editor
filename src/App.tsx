@@ -23,10 +23,12 @@ import Subscript from '@tiptap/extension-subscript'
 import Superscript from '@tiptap/extension-superscript'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
+import { Download, Upload, Plus, FileText, Search, Maximize2, Settings, History, Palette } from 'lucide-react'
 import { FontSize } from './extensions/FontSize'
 import logoDoc from './assets/logo-doc.svg'
 import logoSheet from './assets/logo-sheet.svg'
-import logoCode from './assets/logo-code.svg'
+import logoCode from './assets/logo-flimasCode.png'
+import logoStudio from './assets/logo-flimasStudio.png'
 import MenuBar from './components/MenuBar'
 import FindReplace from './components/FindReplace'
 import Dashboard from './components/Dashboard'
@@ -37,6 +39,7 @@ import { pushSnapshot, type Snapshot } from './history'
 
 const SheetEditor = lazy(() => import('./components/SheetEditor'))
 const CodeEditor  = lazy(() => import('./components/CodeEditor'))
+const FlimasEditor = lazy(() => import('./components/flimas/FlimasEditor'))
 
 function htmlToMarkdown(html: string): string {
   const div = document.createElement('div')
@@ -325,9 +328,9 @@ export default function App() {
   }, [editor])
 
   const handleCreate = useCallback((kind: FileKind = 'doc') => {
-    if (kind === 'code') {
-      // Flimas Code não usa TemplatePicker — o próprio editor escolhe linguagem.
-      const created = newFile('code', 'Código sem título', '')
+    if (kind === 'code' || kind === 'image') {
+      const isCode = kind === 'code'
+      const created = newFile(kind, isCode ? 'Código sem título' : 'Imagem sem título', '')
       setFiles(prev => {
         const next = [created, ...prev]
         saveFiles(next)
@@ -619,25 +622,30 @@ ${editor.getHTML()}
 
   const isSheet = currentFile?.kind === 'sheet'
   const isCode  = currentFile?.kind === 'code'
+  const isImage = currentFile?.kind === 'image'
 
   const brandLogo =
     isSheet ? logoSheet :
     isCode  ? logoCode  :
+    isImage ? logoStudio :
     logoDoc
 
   const brandLabel =
     isSheet ? 'Flimas Sheets' :
     isCode  ? 'Flimas Code'   :
+    isImage ? 'Flimas Studio' :
     'Flimas Docs'
 
   const brandSubtitle =
     isSheet ? 'Planilha' :
     isCode  ? 'Código'   :
+    isImage ? 'Imagem'   :
     'Documento'
 
   const brandAccent =
     isSheet ? 'text-emerald-600' :
     isCode  ? 'text-sky-600'     :
+    isImage ? 'text-pink-500'    :
     'text-violet-500'
 
   return (
@@ -815,6 +823,26 @@ ${editor.getHTML()}
           </div>
         }>
           <CodeEditor
+            fileId={currentFile.id}
+            initialContent={currentFile.content}
+            darkMode={darkMode}
+            readOnly={readOnly}
+            onChange={(json) => {
+              sheetContentRef.current = json
+              setSaved(false)
+            }}
+          />
+        </Suspense>
+      ) : isImage && currentFile ? (
+        <Suspense fallback={
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <span className="text-6xl mb-3 block animate-pulse">🖌️</span>
+              <p className="text-slate-500 dark:text-slate-400 font-semibold">Carregando Flimas Studio…</p>
+            </div>
+          </div>
+        }>
+          <FlimasEditor
             fileId={currentFile.id}
             initialContent={currentFile.content}
             darkMode={darkMode}
