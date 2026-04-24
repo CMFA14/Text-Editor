@@ -15,6 +15,12 @@ interface FlimasEditorProps {
 
 export type FlimasTool = 'select' | 'brush' | 'text' | 'rect' | 'circle' | 'line' | 'crop' | 'image' | 'erase'
 
+export interface PageData {
+  json: string;
+  width: number;
+  height: number;
+}
+
 export default function FlimasEditor({
   fileId,
   initialContent,
@@ -39,7 +45,7 @@ export default function FlimasEditor({
   const isHistoryUpdate = useRef(false)
 
   // Múltiplas páginas
-  const [pages, setPages] = useState<string[]>([''])
+  const [pages, setPages] = useState<PageData[]>([{ json: '', width: 1024, height: 768 }])
   const [currentPage, setCurrentPage] = useState(0)
   
   const fabricCanvases = useRef<(fabric.Canvas | null)[]>([])
@@ -48,12 +54,11 @@ export default function FlimasEditor({
   const saveContent = useCallback(() => {
     if (!fabricCanvases.current[currentPage]) return;
     
-    // Pegar o estado atualizado da página atual antes de salvar o payload total
     const currentJson = JSON.stringify(fabricCanvases.current[currentPage]!.toJSON())
     
     setPages(prev => {
        const next = [...prev]
-       next[currentPage] = currentJson
+       next[currentPage] = { ...next[currentPage], json: currentJson }
        const payload = JSON.stringify({
          isFlimasMulti: true,
          pages: next,
@@ -78,12 +83,12 @@ export default function FlimasEditor({
 
   const handlePageInit = (index: number, c: fabric.Canvas) => {
     fabricCanvases.current[index] = c
+    const pageData = pages[index]
     
-    if (pages[index]) {
+    if (pageData && pageData.json) {
       try {
-        c.loadFromJSON(pages[index], () => {
+        c.loadFromJSON(pageData.json, () => {
           c.renderAll()
-          // Garantir que nenhum objeto comece selecionado ou "travado"
           c.discardActiveObject()
         })
       } catch (e) {
@@ -92,16 +97,14 @@ export default function FlimasEditor({
     }
 
     c.on('object:modified', saveContent)
-    c.on('object:added', (e) => {
-        if(!(e as any).isExternal) saveContent();
+    c.on('object:added', (e: any) => {
+        if(!e.isExternal && c.isDrawingMode === false) saveContent();
     })
     c.on('object:removed', saveContent)
     c.on('path:created', saveContent)
     
-    // Click listener unificado
-    c.on('mouse:down', (opt: any) => {
-       handleCanvasClick(c, opt)
-    })
+    // Click listener unificado - sem NUNCA usar off genérico!
+    c.on('mouse:down', (opt: any) => handleCanvasClickCore(c, opt))
 
     // Sincronizar dimensões do objeto selecionado para o painel
     c.on('selection:created', (e) => syncDimensions(e.selected?.[0]))
@@ -122,13 +125,18 @@ export default function FlimasEditor({
       try {
         const data = JSON.parse(initialContent)
         if (data.isFlimasMulti) {
-          setPages(data.pages)
+          // Backward compatibility se data.pages for string[]
+          const p = data.pages.map((pData: any) => {
+             if (typeof pData === 'string') return { json: pData, width: 1024, height: 768 }
+             return pData
+          })
+          setPages(p)
           setCurrentPage(data.currentPage || 0)
         } else {
-          setPages([initialContent])
+          setPages([{ json: initialContent, width: 1024, height: 768 }])
         }
       } catch {
-        setPages([initialContent])
+        setPages([{ json: initialContent, width: 1024, height: 768 }])
       }
     }
   }, [initialContent])
@@ -164,48 +172,42 @@ export default function FlimasEditor({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [activeCanvas, history, historyIndex, saveContent])
 
-  // Ferramentas e Mouse
-  const handleCanvasClick = (c: fabric.Canvas, opt: any) => {
-    // Pegar o estado ATUAL da ferramenta via Ref se necessário,
-    // mas aqui o listener é re-adicionado ou usa escopo do mount.
-    // Usaremos uma referência persistente para a ferramenta ativa para evitar re-binds constantes
-  }
-
   const activeToolRef = useRef(activeTool)
+  const fontRef = useRef({ fontFamily, fontSize, color })
+  
   useEffect(() => { activeToolRef.current = activeTool }, [activeTool])
+  useEffect(() => { fontRef.current = { fontFamily, fontSize, color } }, [fontFamily, fontSize, color])
 
   const handleCanvasClickCore = useCallback((c: fabric.Canvas, opt: any) => {
     const tool = activeToolRef.current
-    if (tool === 'select') return
+    const settings = fontRef.current
+    if (tool === 'select' || tool === 'brush') return
     
-    // Se clicou num objeto existente e não é pincel, apenas seleciona
-    if (opt.target && tool !== 'brush') return
-
     const pointer = c.getPointer(opt.e)
     let newObj: fabric.Object | null = null
 
     if (tool === 'text') {
       newObj = new fabric.IText('Clique para editar', {
         left: pointer.x, top: pointer.y,
-        fontFamily, fill: color, fontSize,
+        fontFamily: settings.fontFamily, fill: settings.color, fontSize: settings.fontSize,
         originX: 'center', originY: 'center'
       })
     } else if (tool === 'rect') {
       newObj = new fabric.Rect({
         left: pointer.x, top: pointer.y,
-        width: 150, height: 100, fill: color,
+        width: 150, height: 100, fill: settings.color,
         rx: 10, ry: 10, originX: 'center', originY: 'center'
       })
     } else if (tool === 'circle') {
       newObj = new fabric.Circle({
         left: pointer.x, top: pointer.y,
-        radius: 60, fill: color,
+        radius: 60, fill: settings.color,
         originX: 'center', originY: 'center'
       })
     } else if (tool === 'line') {
       newObj = new fabric.Rect({
         left: pointer.x, top: pointer.y,
-        width: 200, height: 4, fill: color,
+        width: 200, height: 4, fill: settings.color,
         originX: 'center', originY: 'center'
       })
     }
@@ -218,28 +220,24 @@ export default function FlimasEditor({
       c.renderAll()
       saveContent()
     }
-  }, [color, fontFamily, fontSize, saveContent])
-
-  // Injetar listener de clique real
-  useEffect(() => {
-     fabricCanvases.current.forEach(c => {
-        if (!c) return
-        c.off('mouse:down')
-        c.on('mouse:down', (opt) => handleCanvasClickCore(c, opt))
-     })
-  }, [handleCanvasClickCore])
+  }, [saveContent])
 
   // Sincronizar Pincel e Selecionabilidade
   useEffect(() => {
     fabricCanvases.current.forEach(c => {
       if (!c) return
+      
       c.isDrawingMode = (activeTool === 'brush')
+      
       if (activeTool === 'brush') {
-         const brush = new fabric.PencilBrush(c)
-         brush.color = color
-         brush.width = brushSize
-         c.freeDrawingBrush = brush
+         if (!c.freeDrawingBrush || !(c.freeDrawingBrush as any).isPencil) {
+            c.freeDrawingBrush = new fabric.PencilBrush(c)
+            ;(c.freeDrawingBrush as any).isPencil = true
+         }
+         c.freeDrawingBrush.color = color
+         c.freeDrawingBrush.width = brushSize
       }
+      
       c.selection = (activeTool === 'select')
       c.forEachObject(obj => {
          obj.selectable = (activeTool === 'select')
@@ -289,10 +287,27 @@ export default function FlimasEditor({
   }
 
   const handleAddPage = () => {
-    setPages(prev => [...prev, ''])
-    setCurrentPage(pages.length)
+    const nextPages = [...pages, { json: '', width: 1024, height: 768 }]
+    setPages(nextPages)
+    setCurrentPage(nextPages.length - 1)
     setHistory([''])
     setHistoryIndex(0)
+    saveContent()
+  }
+
+  const handlePageResize = (idx: number, w: number, h: number) => {
+    setPages(prev => {
+       const next = [...prev]
+       next[idx] = { ...next[idx], width: w, height: h }
+       
+       const c = fabricCanvases.current[idx]
+       if (c) {
+          c.setDimensions({ width: w, height: h })
+          c.renderAll()
+       }
+       return next
+    })
+    saveContent()
   }
 
   const handleDeletePage = (idx: number) => {
@@ -368,11 +383,37 @@ export default function FlimasEditor({
                    </button>
                  )}
               </div>
-              <CanvasArea 
-                onInit={(c) => handlePageInit(idx, c)} 
-                readOnly={readOnly}
-                darkMode={darkMode}
-              />
+              
+              <div className="flex flex-col items-center">
+                <CanvasArea 
+                  onInit={(c) => handlePageInit(idx, c)} 
+                  readOnly={readOnly}
+                  darkMode={darkMode}
+                  canvasWidth={p.width}
+                  canvasHeight={p.height}
+                />
+                
+                {/* Resizers */}
+                <div className={`mt-3 flex gap-4 text-xs font-bold transition-opacity ${currentPage === idx ? 'opacity-100' : 'opacity-0'}`}>
+                   <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 text-slate-500">
+                     <span>L</span>
+                     <input 
+                       type="number" value={p.width} className="w-14 bg-transparent outline-none text-center"
+                       onChange={(e) => handlePageResize(idx, Number(e.target.value), p.height)}
+                     />
+                     <span>px</span>
+                   </div>
+                   <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 text-slate-500">
+                     <span>A</span>
+                     <input 
+                       type="number" value={p.height} className="w-14 bg-transparent outline-none text-center"
+                       onChange={(e) => handlePageResize(idx, p.width, Number(e.target.value))}
+                     />
+                     <span>px</span>
+                   </div>
+                </div>
+              </div>
+
            </div>
          ))}
 
