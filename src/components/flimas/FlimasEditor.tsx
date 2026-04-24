@@ -1,9 +1,26 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import * as fabric from 'fabric'
-import { Trash2, Type, Square, Circle, LineChart as LineIcon, MousePointer2, Brush, ImagePlus, Undo2, Redo2, Wand2 } from 'lucide-react'
-import Toolbar from './Toolbar'
 import CanvasArea from './CanvasArea'
+import Toolbar from './Toolbar'
 import PropertiesPanel from './PropertiesPanel'
+
+// ── Tipos ─────────────────────────────────────────────────
+export type FlimasTool =
+  | 'select' | 'pan' | 'brush' | 'eraser' | 'text'
+  | 'rect' | 'circle' | 'triangle' | 'line' | 'arrow'
+
+export interface AdjustParams {
+  brightness: number     // -1..1
+  contrast: number       // -1..1
+  saturation: number     // -1..1
+  hue: number            // -1..1 (rotação)
+  blur: number           // 0..1
+  preset: 'none' | 'grayscale' | 'sepia' | 'invert' | 'vintage' | 'kodachrome' | 'polaroid' | 'bw' | 'brownie' | 'technicolor'
+}
+
+const DEFAULT_ADJUST: AdjustParams = {
+  brightness: 0, contrast: 0, saturation: 0, hue: 0, blur: 0, preset: 'none',
+}
 
 interface FlimasEditorProps {
   fileId: string
@@ -13,438 +30,728 @@ interface FlimasEditorProps {
   onChange: (json: string) => void
 }
 
-export type FlimasTool = 'select' | 'brush' | 'text' | 'rect' | 'circle' | 'line' | 'crop' | 'image' | 'erase'
-
-export interface PageData {
-  json: string;
-  width: number;
-  height: number;
+interface StoredDoc {
+  version: 1
+  width: number
+  height: number
+  background: string
+  canvas: unknown
 }
 
+// Marcadores de propriedades customizadas que devem ser serializadas
+const CUSTOM_PROPS = ['flimasAdjust', 'flimasName', 'flimasKind']
+
+// Importação pendente (vinda do dashboard via drop-to-create)
+interface PendingImport { __flimasImport: string }
+
+function safeParse(raw: string): unknown {
+  if (!raw) return null
+  try { return JSON.parse(raw) } catch { return null }
+}
+
+// ── Utilidades de filtros ─────────────────────────────────
+type AnyFilter = fabric.filters.BaseFilter<string>
+function buildFilters(params: AdjustParams): AnyFilter[] {
+  const f: AnyFilter[] = []
+  if (params.brightness !== 0) f.push(new fabric.filters.Brightness({ brightness: params.brightness }))
+  if (params.contrast !== 0) f.push(new fabric.filters.Contrast({ contrast: params.contrast }))
+  if (params.saturation !== 0) f.push(new fabric.filters.Saturation({ saturation: params.saturation }))
+  if (params.hue !== 0) f.push(new fabric.filters.HueRotation({ rotation: params.hue }))
+  if (params.blur > 0) f.push(new fabric.filters.Blur({ blur: params.blur }))
+  switch (params.preset) {
+    case 'grayscale':    f.push(new fabric.filters.Grayscale()); break
+    case 'sepia':        f.push(new fabric.filters.Sepia()); break
+    case 'invert':       f.push(new fabric.filters.Invert()); break
+    case 'vintage':      f.push(new fabric.filters.Vintage()); break
+    case 'kodachrome':   f.push(new fabric.filters.Kodachrome()); break
+    case 'polaroid':     f.push(new fabric.filters.Polaroid()); break
+    case 'bw':           f.push(new fabric.filters.BlackWhite()); break
+    case 'brownie':      f.push(new fabric.filters.Brownie()); break
+    case 'technicolor':  f.push(new fabric.filters.Technicolor()); break
+  }
+  return f
+}
+
+function isFabricImage(obj: fabric.Object | undefined | null): obj is fabric.FabricImage {
+  return !!obj && (obj.type === 'image' || obj instanceof fabric.FabricImage)
+}
+
+// ── Componente principal ──────────────────────────────────
 export default function FlimasEditor({
-  fileId,
-  initialContent,
-  darkMode,
-  readOnly,
-  onChange
+  fileId, initialContent, darkMode, readOnly, onChange,
 }: FlimasEditorProps) {
+  // Canvas persistência
+  const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 800 })
+  const [background, setBackground] = useState('#ffffff')
+
+  // Ferramenta ativa
   const [activeTool, setActiveTool] = useState<FlimasTool>('select')
-  const [color, setColor] = useState('#7c3aed')
-  const [brushSize, setBrushSize] = useState(5)
-  const [fontFamily, setFontFamily] = useState('sans-serif')
-  const [fontSize, setFontSize] = useState(40)
-  const [brightness, setBrightness] = useState(0)
-  const [contrast, setContrast] = useState(0)
-  const [saturation, setSaturation] = useState(0)
-  const [objWidth, setObjWidth] = useState(100)
-  const [objHeight, setObjHeight] = useState(100)
+
+  // Propriedades do "próximo objeto a criar" (pincel, texto, shape)
+  const [brushColor, setBrushColor] = useState('#7c3aed')
+  const [brushSize, setBrushSize] = useState(6)
+  const [fontFamily, setFontFamily] = useState('Inter, sans-serif')
+  const [fontSize, setFontSize] = useState(48)
+
+  // Zoom controlado
+  const [zoom, setZoom] = useState(1)
+
+  // Active object snapshot (lido do canvas, não "source of truth")
+  const [activeSnapshot, setActiveSnapshot] = useState<ActiveSnapshot | null>(null)
+
+  // Layers
+  const [layers, setLayers] = useState<LayerInfo[]>([])
 
   // Histórico
-  const [history, setHistory] = useState<string[]>([])
-  const [historyIndex, setHistoryIndex] = useState(-1)
-  const isHistoryUpdate = useRef(false)
+  const historyRef = useRef<string[]>([])
+  const historyIndexRef = useRef(-1)
+  const [historyVersion, setHistoryVersion] = useState(0)  // força re-render quando muda
 
-  // Múltiplas páginas
-  const [pages, setPages] = useState<PageData[]>([{ json: '', width: 1024, height: 768 }])
-  const [currentPage, setCurrentPage] = useState(0)
-  
-  const fabricCanvases = useRef<(fabric.Canvas | null)[]>([])
-  const activeCanvas = fabricCanvases.current[currentPage]
+  const canvasRef = useRef<fabric.Canvas | null>(null)
+  const isRestoringRef = useRef(false)
+  const suspendChangeRef = useRef(false)
+  const initialImportedRef = useRef(false)
 
-  const saveContent = useCallback(() => {
-    if (!fabricCanvases.current[currentPage]) return;
-    
-    const currentJson = JSON.stringify(fabricCanvases.current[currentPage]!.toJSON())
-    
-    setPages(prev => {
-       const next = [...prev]
-       next[currentPage] = { ...next[currentPage], json: currentJson }
-       const payload = JSON.stringify({
-         isFlimasMulti: true,
-         pages: next,
-         currentPage: currentPage
-       })
-       onChange(payload)
-       return next
-    })
+  // ── Helpers ──────────────────────────────────────────
+  const getCanvas = () => canvasRef.current
 
-    if (isHistoryUpdate.current) {
-      isHistoryUpdate.current = false
+  const refreshLayers = useCallback(() => {
+    const c = getCanvas()
+    if (!c) return
+    const list: LayerInfo[] = c.getObjects().map((o, i) => ({
+      idx: i,
+      name: (o as FabricObjWithMeta).flimasName || defaultLayerName(o),
+      type: o.type || 'object',
+      visible: o.visible !== false,
+      locked: o.selectable === false && o.evented === false,
+      opacity: o.opacity ?? 1,
+      isImage: isFabricImage(o),
+      ref: o,
+    }))
+    setLayers(list.reverse())  // topo da lista = topo do canvas
+  }, [])
+
+  const syncActiveSnapshot = useCallback(() => {
+    const c = getCanvas()
+    if (!c) { setActiveSnapshot(null); return }
+    const obj = c.getActiveObject()
+    if (!obj) { setActiveSnapshot(null); return }
+    setActiveSnapshot(snapshotFromObject(obj))
+  }, [])
+
+  const pushHistory = useCallback(() => {
+    const c = getCanvas()
+    if (!c) return
+    if (isRestoringRef.current) return
+    const json = JSON.stringify((c.toJSON as (p?: string[]) => unknown)(CUSTOM_PROPS))
+    const hist = historyRef.current
+    // trim future se estávamos em meio ao undo
+    if (historyIndexRef.current < hist.length - 1) {
+      hist.length = historyIndexRef.current + 1
+    }
+    // não duplicar
+    if (hist[hist.length - 1] === json) return
+    hist.push(json)
+    // cap de 50 snapshots
+    if (hist.length > 50) hist.shift()
+    historyIndexRef.current = hist.length - 1
+    setHistoryVersion(v => v + 1)
+  }, [])
+
+  const persistDoc = useCallback(() => {
+    const c = getCanvas()
+    if (!c) return
+    const doc: StoredDoc = {
+      version: 1,
+      width: c.getWidth(),
+      height: c.getHeight(),
+      background: background,
+      canvas: (c.toJSON as (p?: string[]) => unknown)(CUSTOM_PROPS),
+    }
+    onChange(JSON.stringify(doc))
+  }, [background, onChange])
+
+  // Ref estável para persistDoc e pushHistory (evita stale closures nos listeners)
+  const persistRef = useRef(persistDoc)
+  const pushHistRef = useRef(pushHistory)
+  useEffect(() => { persistRef.current = persistDoc }, [persistDoc])
+  useEffect(() => { pushHistRef.current = pushHistory }, [pushHistory])
+
+  const handleChange = useCallback(() => {
+    if (suspendChangeRef.current) return
+    pushHistRef.current()
+    persistRef.current()
+    refreshLayers()
+  }, [refreshLayers])
+
+  const handleChangeRef = useRef(handleChange)
+  useEffect(() => { handleChangeRef.current = handleChange }, [handleChange])
+
+  // ── Init do canvas ────────────────────────────────────
+  const handleInit = useCallback((c: fabric.Canvas) => {
+    canvasRef.current = c
+
+    // Listeners – todos passam pela ref para não segurar closure antiga
+    c.on('object:modified', () => handleChangeRef.current())
+    c.on('object:added',    () => handleChangeRef.current())
+    c.on('object:removed',  () => handleChangeRef.current())
+    c.on('path:created',    () => handleChangeRef.current())
+
+    const onSel = () => syncActiveSnapshot()
+    c.on('selection:created', onSel)
+    c.on('selection:updated', onSel)
+    c.on('selection:cleared', onSel)
+
+    // Carrega conteúdo
+    const raw = initialContent
+    const parsed = safeParse(raw)
+
+    // Caso 1: import pendente vindo do dashboard (dataURL único)
+    if (!initialImportedRef.current && parsed && typeof parsed === 'object' && '__flimasImport' in parsed) {
+      initialImportedRef.current = true
+      const dataUrl = (parsed as PendingImport).__flimasImport
+      loadImageIntoCanvas(c, dataUrl).then(() => {
+        pushHistRef.current()
+        persistRef.current()
+        refreshLayers()
+      })
       return
     }
 
-    setHistory(prev => {
-      const next = prev.slice(0, historyIndex + 1)
-      next.push(currentJson)
-      return next
-    })
-    setHistoryIndex(prev => prev + 1)
-  }, [currentPage, onChange, historyIndex])
-
-  const handlePageInit = (index: number, c: fabric.Canvas) => {
-    fabricCanvases.current[index] = c
-    const pageData = pages[index]
-    
-    if (pageData && pageData.json) {
-      try {
-        c.loadFromJSON(pageData.json, () => {
-          c.renderAll()
-          c.discardActiveObject()
+    // Caso 2: documento Flimas v1
+    if (parsed && typeof parsed === 'object' && 'canvas' in parsed && 'version' in parsed) {
+      const doc = parsed as StoredDoc
+      if (doc.width && doc.height) setCanvasSize({ width: doc.width, height: doc.height })
+      if (doc.background) setBackground(doc.background)
+      suspendChangeRef.current = true
+      c.loadFromJSON(doc.canvas as object).then(() => {
+        c.renderAll()
+        // Reaplica filtros às imagens (preserva sliders não-destrutivos)
+        c.getObjects().forEach(o => {
+          if (isFabricImage(o)) {
+            const adj = (o as FabricImgWithMeta).flimasAdjust
+            if (adj) {
+              o.filters = buildFilters(adj)
+              o.applyFilters()
+            }
+          }
         })
-      } catch (e) {
-        console.error("Failed to load page json", e)
-      }
+        c.renderAll()
+        suspendChangeRef.current = false
+        pushHistRef.current()   // snapshot inicial
+        refreshLayers()
+      }).catch(e => {
+        console.error('Falha ao carregar canvas', e)
+        suspendChangeRef.current = false
+        pushHistRef.current()
+      })
+      return
     }
 
-    c.on('object:modified', saveContent)
-    c.on('object:added', (e: any) => {
-        if(!e.isExternal && c.isDrawingMode === false) saveContent();
-    })
-    c.on('object:removed', saveContent)
-    c.on('path:created', saveContent)
-    
-    // Click listener unificado - sem NUNCA usar off genérico!
-    c.on('mouse:down', (opt: any) => handleCanvasClickCore(c, opt))
-
-    // Sincronizar dimensões do objeto selecionado para o painel
-    c.on('selection:created', (e) => syncDimensions(e.selected?.[0]))
-    c.on('selection:updated', (e) => syncDimensions(e.selected?.[0]))
-    c.on('selection:cleared', () => { setObjWidth(0); setObjHeight(0); })
-  }
-
-  const syncDimensions = (obj?: fabric.Object) => {
-     if (obj) {
-        setObjWidth(Math.round(obj.getScaledWidth()))
-        setObjHeight(Math.round(obj.getScaledHeight()))
-     }
-  }
-
-  // Parse Initial Content
-  useEffect(() => {
-    if (initialContent) {
-      try {
-        const data = JSON.parse(initialContent)
-        if (data.isFlimasMulti) {
-          // Backward compatibility se data.pages for string[]
-          const p = data.pages.map((pData: any) => {
-             if (typeof pData === 'string') return { json: pData, width: 1024, height: 768 }
-             return pData
-          })
-          setPages(p)
-          setCurrentPage(data.currentPage || 0)
-        } else {
-          setPages([{ json: initialContent, width: 1024, height: 768 }])
-        }
-      } catch {
-        setPages([{ json: initialContent, width: 1024, height: 768 }])
-      }
-    }
+    // Caso 3: vazio — começa com snapshot em branco
+    pushHistRef.current()
+    refreshLayers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialContent])
 
-  // Atalhos de Teclado
+  // ── Sincronização de brush / cursor / interação com a ferramenta ──
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const c = activeCanvas
-      if (!c) return
-      
-      const isEditing = (c.getActiveObject() as any)?.isEditing
-      if (isEditing) return
+    const c = getCanvas()
+    if (!c) return
 
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        const activeObj = c.getActiveObject()
-        if (activeObj) {
-           c.remove(activeObj)
-           c.discardActiveObject()
-           c.renderAll()
-           saveContent()
+    // pan tool: desliga interação normal, cursor vira mão (Alt já faz pan, mas 'pan' força)
+    const isBrush = activeTool === 'brush' || activeTool === 'eraser'
+
+    c.isDrawingMode = isBrush && !readOnly
+    c.selection = activeTool === 'select' && !readOnly
+    c.skipTargetFind = activeTool !== 'select' || readOnly
+
+    c.defaultCursor =
+      activeTool === 'pan' ? 'grab' :
+      activeTool === 'text' ? 'text' :
+      activeTool === 'select' ? 'default' :
+      'crosshair'
+
+    if (isBrush) {
+      // Pincel simples. Borracha = destination-out no globalCompositeOperation do caminho.
+      const pencil = new fabric.PencilBrush(c)
+      pencil.color = activeTool === 'eraser' ? '#000000' : brushColor
+      pencil.width = brushSize
+      c.freeDrawingBrush = pencil
+      // Hack: quando path é criado no modo eraser, aplicamos composite operation
+      if (activeTool === 'eraser') {
+        const handler = (e: { path: fabric.Path }) => {
+          e.path.globalCompositeOperation = 'destination-out'
+          c.requestRenderAll()
         }
-      } else if (e.ctrlKey && e.key.toLowerCase() === 'z') {
-        e.preventDefault()
-        if (historyIndex > 0) {
-          isHistoryUpdate.current = true
-          const prevJson = history[historyIndex - 1]
-          c.loadFromJSON(prevJson, () => c.renderAll())
-          setHistoryIndex(prev => prev - 1)
-        }
+        c.on('path:created', handler)
+        return () => { c.off('path:created', handler) }
       }
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [activeCanvas, history, historyIndex, saveContent])
+  }, [activeTool, brushColor, brushSize, readOnly])
 
-  const activeToolRef = useRef(activeTool)
-  const fontRef = useRef({ fontFamily, fontSize, color })
-  
-  useEffect(() => { activeToolRef.current = activeTool }, [activeTool])
-  useEffect(() => { fontRef.current = { fontFamily, fontSize, color } }, [fontFamily, fontSize, color])
-
-  const handleCanvasClickCore = useCallback((c: fabric.Canvas, opt: any) => {
-    const tool = activeToolRef.current
-    const settings = fontRef.current
-    if (tool === 'select' || tool === 'brush') return
-    
-    const pointer = c.getPointer(opt.e)
-    let newObj: fabric.Object | null = null
-
-    if (tool === 'text') {
-      newObj = new fabric.IText('Clique para editar', {
-        left: pointer.x, top: pointer.y,
-        fontFamily: settings.fontFamily, fill: settings.color, fontSize: settings.fontSize,
-        originX: 'center', originY: 'center'
-      })
-    } else if (tool === 'rect') {
-      newObj = new fabric.Rect({
-        left: pointer.x, top: pointer.y,
-        width: 150, height: 100, fill: settings.color,
-        rx: 10, ry: 10, originX: 'center', originY: 'center'
-      })
-    } else if (tool === 'circle') {
-      newObj = new fabric.Circle({
-        left: pointer.x, top: pointer.y,
-        radius: 60, fill: settings.color,
-        originX: 'center', originY: 'center'
-      })
-    } else if (tool === 'line') {
-      newObj = new fabric.Rect({
-        left: pointer.x, top: pointer.y,
-        width: 200, height: 4, fill: settings.color,
-        originX: 'center', originY: 'center'
-      })
-    }
-
-    if (newObj) {
-      c.add(newObj)
-      c.setActiveObject(newObj)
-      if (tool === 'text') (newObj as fabric.IText).enterEditing()
-      setActiveTool('select')
-      c.renderAll()
-      saveContent()
-    }
-  }, [saveContent])
-
-  // Sincronizar Pincel e Selecionabilidade
+  // ── Criação de shapes / texto ao clicar ────────────────
   useEffect(() => {
-    fabricCanvases.current.forEach(c => {
-      if (!c) return
-      
-      c.isDrawingMode = (activeTool === 'brush')
-      
-      if (activeTool === 'brush') {
-         if (!c.freeDrawingBrush || !(c.freeDrawingBrush as any).isPencil) {
-            c.freeDrawingBrush = new fabric.PencilBrush(c)
-            ;(c.freeDrawingBrush as any).isPencil = true
-         }
-         c.freeDrawingBrush.color = color
-         c.freeDrawingBrush.width = brushSize
+    const c = getCanvas()
+    if (!c) return
+    if (readOnly) return
+
+    const isShape = ['rect','circle','triangle','line','arrow','text'].includes(activeTool)
+    if (!isShape) return
+
+    const onMouseDown = (opt: fabric.TPointerEventInfo) => {
+      const e = opt.e as MouseEvent
+      if (e.altKey) return   // pan
+
+      const pointer = c.getViewportPoint(opt.e)
+      const scenePoint = c.getScenePoint(opt.e)
+      void pointer
+      const x = scenePoint.x
+      const y = scenePoint.y
+
+      let obj: fabric.Object | null = null
+      const commonProps = {
+        left: x, top: y, originX: 'center' as const, originY: 'center' as const,
+        fill: brushColor,
       }
-      
-      c.selection = (activeTool === 'select')
-      c.forEachObject(obj => {
-         obj.selectable = (activeTool === 'select')
-      })
+      switch (activeTool) {
+        case 'rect':
+          obj = new fabric.Rect({ ...commonProps, width: 180, height: 120, rx: 6, ry: 6 })
+          break
+        case 'circle':
+          obj = new fabric.Ellipse({ ...commonProps, rx: 80, ry: 60 })
+          break
+        case 'triangle':
+          obj = new fabric.Triangle({ ...commonProps, width: 160, height: 140 })
+          break
+        case 'line':
+          obj = new fabric.Line([x - 100, y, x + 100, y], { stroke: brushColor, strokeWidth: 4, fill: undefined })
+          break
+        case 'arrow': {
+          // Seta como Path simples: linha + ponta
+          const path = `M ${x - 80} ${y} L ${x + 70} ${y} L ${x + 60} ${y - 12} M ${x + 70} ${y} L ${x + 60} ${y + 12}`
+          obj = new fabric.Path(path, { stroke: brushColor, strokeWidth: 4, fill: undefined, originX: 'left', originY: 'top' })
+          break
+        }
+        case 'text': {
+          const t = new fabric.IText('Escreva aqui', {
+            ...commonProps,
+            fontFamily, fontSize, fill: brushColor, editable: true,
+          })
+          obj = t
+          break
+        }
+      }
+
+      if (!obj) return
+      c.add(obj)
+      c.setActiveObject(obj)
+      if (obj instanceof fabric.IText) obj.enterEditing()
       c.requestRenderAll()
-    })
-  }, [activeTool, color, brushSize])
-
-  // Sincronizar Propriedades do Objeto Ativo
-  useEffect(() => {
-    if (!activeCanvas) return
-    const obj = activeCanvas.getActiveObject()
-    if (!obj) return
-
-    const changes: any = { fill: color }
-    if (obj.type === 'i-text' || obj.type === 'text') {
-      changes.fontFamily = fontFamily
-      changes.fontSize = fontSize
+      setActiveTool('select')
     }
-    
-    obj.set(changes)
-    activeCanvas.renderAll()
-    saveContent()
-  }, [color, fontFamily, fontSize, activeCanvas, saveContent])
 
-  // Sincronizar Width/Height Manuais
+    c.on('mouse:down', onMouseDown)
+    return () => { c.off('mouse:down', onMouseDown) }
+  }, [activeTool, brushColor, fontFamily, fontSize, readOnly])
+
+  // ── Shortcuts de teclado ──────────────────────────────
   useEffect(() => {
-     const obj = activeCanvas?.getActiveObject()
-     if (obj && (objWidth > 0 || objHeight > 0)) {
-        if (objWidth !== Math.round(obj.getScaledWidth())) obj.scaleToWidth(objWidth);
-        if (objHeight !== Math.round(obj.getScaledHeight())) obj.scaleToHeight(objHeight);
-        activeCanvas?.renderAll()
-        saveContent()
-     }
-  }, [objWidth, objHeight])
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      const c = getCanvas()
+      if (!c) return
+      const activeObj = c.getActiveObject()
+      const isEditingText = activeObj && 'isEditing' in activeObj && (activeObj as fabric.IText).isEditing
+      if (isEditingText) return
 
-  const handleImageAdd = async (dataUrl: string) => {
-    if (!activeCanvas) return
-    try {
-      const ImageClass = fabric.FabricImage || fabric.Image
-      const img = await ImageClass.fromURL(dataUrl)
-      img.scaleToWidth(400)
-      activeCanvas.add(img)
-      activeCanvas.setActiveObject(img)
-      saveContent()
-    } catch (e) { console.error(e) }
-  }
+      // Undo / Redo
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault(); doUndo(); return
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+        e.preventDefault(); doRedo(); return
+      }
 
-  const handleAddPage = () => {
-    const nextPages = [...pages, { json: '', width: 1024, height: 768 }]
-    setPages(nextPages)
-    setCurrentPage(nextPages.length - 1)
-    setHistory([''])
-    setHistoryIndex(0)
-    saveContent()
-  }
+      // Delete
+      if ((e.key === 'Delete' || e.key === 'Backspace') && activeObj && !readOnly) {
+        e.preventDefault()
+        const sel = c.getActiveObjects()
+        sel.forEach(o => c.remove(o))
+        c.discardActiveObject()
+        c.requestRenderAll()
+        return
+      }
 
-  const handlePageResize = (idx: number, w: number, h: number) => {
-    setPages(prev => {
-       const next = [...prev]
-       next[idx] = { ...next[idx], width: w, height: h }
-       
-       const c = fabricCanvases.current[idx]
-       if (c) {
-          c.setDimensions({ width: w, height: h })
-          c.renderAll()
-       }
-       return next
-    })
-    saveContent()
-  }
-
-  const handleDeletePage = (idx: number) => {
-    if (pages.length <= 1) return
-    if (confirm("Excluir esta página?")) {
-      const next = pages.filter((_, i) => i !== idx)
-      setPages(next)
-      fabricCanvases.current = fabricCanvases.current.filter((_, i) => i !== idx)
-      setCurrentPage(Math.max(0, currentPage - 1))
+      // Ferramentas
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        switch (e.key.toLowerCase()) {
+          case 'v': setActiveTool('select'); break
+          case 'h': setActiveTool('pan'); break
+          case 'b': setActiveTool('brush'); break
+          case 'e': setActiveTool('eraser'); break
+          case 't': setActiveTool('text'); break
+          case 'r': setActiveTool('rect'); break
+          case 'o': setActiveTool('circle'); break
+        }
+      }
     }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readOnly])
+
+  // ── Undo / Redo ────────────────────────────────────────
+  const doUndo = useCallback(() => {
+    const hist = historyRef.current
+    const idx = historyIndexRef.current
+    if (idx <= 0) return
+    const c = getCanvas(); if (!c) return
+    const target = hist[idx - 1]
+    historyIndexRef.current = idx - 1
+    isRestoringRef.current = true
+    suspendChangeRef.current = true
+    c.loadFromJSON(JSON.parse(target)).then(() => {
+      c.renderAll()
+      isRestoringRef.current = false
+      suspendChangeRef.current = false
+      persistRef.current()
+      refreshLayers()
+      syncActiveSnapshot()
+      setHistoryVersion(v => v + 1)
+    })
+  }, [refreshLayers, syncActiveSnapshot])
+
+  const doRedo = useCallback(() => {
+    const hist = historyRef.current
+    const idx = historyIndexRef.current
+    if (idx >= hist.length - 1) return
+    const c = getCanvas(); if (!c) return
+    const target = hist[idx + 1]
+    historyIndexRef.current = idx + 1
+    isRestoringRef.current = true
+    suspendChangeRef.current = true
+    c.loadFromJSON(JSON.parse(target)).then(() => {
+      c.renderAll()
+      isRestoringRef.current = false
+      suspendChangeRef.current = false
+      persistRef.current()
+      refreshLayers()
+      syncActiveSnapshot()
+      setHistoryVersion(v => v + 1)
+    })
+  }, [refreshLayers, syncActiveSnapshot])
+
+  const canUndo = useMemo(() => historyIndexRef.current > 0, [historyVersion])
+  const canRedo = useMemo(() => historyIndexRef.current < historyRef.current.length - 1, [historyVersion])
+
+  // ── Zoom handlers ──────────────────────────────────────
+  const zoomIn  = () => setZoom(z => Math.min(8, +(z * 1.25).toFixed(3)))
+  const zoomOut = () => setZoom(z => Math.max(0.1, +(z / 1.25).toFixed(3)))
+  const zoomReset = () => setZoom(1)
+  const zoomFit = () => {
+    // 1 seria "real"; para fit usamos algo razoável relativo ao container — aqui aproximo por 0.8
+    setZoom(0.8)
   }
+
+  // ── Import image ───────────────────────────────────────
+  const importImageFromFile = useCallback(() => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        const c = getCanvas(); if (!c) return
+        loadImageIntoCanvas(c, String(reader.result || ''))
+      }
+      reader.readAsDataURL(file)
+    }
+    input.click()
+  }, [])
+
+  const onDropImage = useCallback((dataUrl: string) => {
+    const c = getCanvas(); if (!c) return
+    loadImageIntoCanvas(c, dataUrl)
+  }, [])
+
+  // ── Export ─────────────────────────────────────────────
+  const doExport = useCallback((format: 'png' | 'jpeg' | 'webp') => {
+    const c = getCanvas(); if (!c) return
+    const mime = format === 'png' ? 'image/png' : format === 'jpeg' ? 'image/jpeg' : 'image/webp'
+    // Reset zoom/pan temporariamente pra export 1:1
+    const vpt = c.viewportTransform ? [...c.viewportTransform] : null
+    c.setViewportTransform([1, 0, 0, 1, 0, 0])
+    const dataUrl = c.toDataURL({
+      format: format === 'jpeg' ? 'jpeg' : format === 'webp' ? 'webp' : 'png',
+      quality: format === 'png' ? 1 : 0.92,
+      multiplier: 1,
+      enableRetinaScaling: false,
+    })
+    if (vpt) c.setViewportTransform(vpt as fabric.TMat2D)
+
+    const a = document.createElement('a')
+    a.href = dataUrl
+    a.download = `flimas-image.${format}`
+    a.click()
+    void mime
+  }, [])
+
+  // ── Clear canvas ───────────────────────────────────────
+  const clearAll = useCallback(() => {
+    if (!confirm('Limpar todos os objetos do canvas? O fundo e o tamanho permanecem.')) return
+    const c = getCanvas(); if (!c) return
+    c.getObjects().slice().forEach(o => c.remove(o))
+    c.discardActiveObject()
+    c.requestRenderAll()
+  }, [])
+
+  // ── Props → objeto ativo ───────────────────────────────
+  const mutateActive = useCallback((fn: (obj: fabric.Object) => void) => {
+    const c = getCanvas(); if (!c) return
+    const obj = c.getActiveObject(); if (!obj) return
+    fn(obj)
+    obj.setCoords()
+    c.requestRenderAll()
+    handleChangeRef.current()
+    syncActiveSnapshot()
+  }, [syncActiveSnapshot])
+
+  const updateActiveImageAdjust = useCallback((patch: Partial<AdjustParams>) => {
+    const c = getCanvas(); if (!c) return
+    const obj = c.getActiveObject()
+    if (!obj || !isFabricImage(obj)) return
+    const current = (obj as FabricImgWithMeta).flimasAdjust || { ...DEFAULT_ADJUST }
+    const next = { ...current, ...patch }
+    ;(obj as FabricImgWithMeta).flimasAdjust = next
+    obj.filters = buildFilters(next)
+    obj.applyFilters()
+    c.requestRenderAll()
+    handleChangeRef.current()
+    syncActiveSnapshot()
+  }, [syncActiveSnapshot])
+
+  const resetActiveAdjust = useCallback(() => updateActiveImageAdjust({ ...DEFAULT_ADJUST }), [updateActiveImageAdjust])
+
+  // ── Layers actions ─────────────────────────────────────
+  const selectLayer = useCallback((obj: fabric.Object) => {
+    const c = getCanvas(); if (!c) return
+    c.setActiveObject(obj)
+    c.requestRenderAll()
+    syncActiveSnapshot()
+  }, [syncActiveSnapshot])
+
+  const toggleLayerVisibility = useCallback((obj: fabric.Object) => {
+    obj.visible = !obj.visible
+    const c = getCanvas(); c?.requestRenderAll()
+    handleChangeRef.current()
+  }, [])
+
+  const toggleLayerLock = useCallback((obj: fabric.Object) => {
+    const locked = !(obj.selectable === false && obj.evented === false)
+    obj.selectable = !locked
+    obj.evented = !locked
+    refreshLayers()
+    const c = getCanvas(); c?.requestRenderAll()
+  }, [refreshLayers])
+
+  const setLayerOpacity = useCallback((obj: fabric.Object, value: number) => {
+    obj.opacity = value
+    const c = getCanvas(); c?.requestRenderAll()
+    handleChangeRef.current()
+  }, [])
+
+  const moveLayer = useCallback((obj: fabric.Object, dir: 'up' | 'down' | 'top' | 'bottom') => {
+    const c = getCanvas(); if (!c) return
+    if (dir === 'up') c.bringObjectForward(obj)
+    else if (dir === 'down') c.sendObjectBackwards(obj)
+    else if (dir === 'top') c.bringObjectToFront(obj)
+    else c.sendObjectToBack(obj)
+    c.requestRenderAll()
+    handleChangeRef.current()
+  }, [])
+
+  const deleteLayer = useCallback((obj: fabric.Object) => {
+    const c = getCanvas(); if (!c) return
+    c.remove(obj)
+    c.discardActiveObject()
+    c.requestRenderAll()
+  }, [])
+
+  const renameLayer = useCallback((obj: fabric.Object, name: string) => {
+    (obj as FabricObjWithMeta).flimasName = name
+    refreshLayers()
+    handleChangeRef.current()
+  }, [refreshLayers])
+
+  const setLayerBlendMode = useCallback((obj: fabric.Object, mode: GlobalCompositeOperation) => {
+    obj.globalCompositeOperation = mode
+    const c = getCanvas(); c?.requestRenderAll()
+    handleChangeRef.current()
+  }, [])
+
+  // ── Canvas-level ───────────────────────────────────────
+  const setCanvasDimensions = useCallback((w: number, h: number) => {
+    const clamp = (v: number) => Math.max(16, Math.min(8000, Math.round(v) || 16))
+    setCanvasSize({ width: clamp(w), height: clamp(h) })
+    handleChangeRef.current()
+  }, [])
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 relative">
-      <Toolbar 
-        activeTool={activeTool} 
-        setActiveTool={setActiveTool} 
-        onClear={() => {
-           if(confirm("Limpar página atual?")) {
-              activeCanvas?.clear()
-              activeCanvas!.backgroundColor = darkMode ? '#1e293b' : '#ffffff'
-              saveContent()
-           }
-        }}
-        onBgRemove={() => alert("IA stub")}
-        onImageRequest={() => {
-           const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*';
-           input.onchange = (e: any) => {
-             const file = e.target.files[0]
-             if (file) {
-               const reader = new FileReader(); reader.onload = (f) => handleImageAdd(f.target?.result as string); reader.readAsDataURL(file)
-             }
-           }
-           input.click()
-        }}
-        onUndo={() => {
-           if (historyIndex > 0) {
-              isHistoryUpdate.current = true
-              const json = history[historyIndex - 1]
-              activeCanvas?.loadFromJSON(json, () => activeCanvas.renderAll())
-              setHistoryIndex(prev => prev - 1)
-           }
-        }}
-        onRedo={() => {
-           if (historyIndex < history.length - 1) {
-              isHistoryUpdate.current = true
-              const json = history[historyIndex + 1]
-              activeCanvas?.loadFromJSON(json, () => activeCanvas.renderAll())
-              setHistoryIndex(prev => prev + 1)
-           }
-        }}
-        canUndo={historyIndex > 0}
-        canRedo={historyIndex < history.length - 1}
-      />
-      
-      <div className="flex-1 overflow-auto bg-slate-200 dark:bg-slate-950 p-12 flex flex-col items-center gap-16 custom-scrollbar scroll-smooth">
-         {pages.map((p, idx) => (
-           <div 
-             key={idx}
-             onClick={() => setCurrentPage(idx)}
-             className={`relative transition-all duration-300 ${currentPage === idx ? 'ring-4 ring-pink-500 ring-offset-8 ring-offset-slate-200 dark:ring-offset-slate-950 rounded-lg' : 'opacity-60 grayscale-[0.3]'}`}
-           >
-              <div className="absolute -left-20 top-0 flex flex-col items-center gap-4">
-                 <div className={`w-12 h-12 rounded-2xl shadow-xl flex items-center justify-center font-black text-lg border-2 transition-all ${currentPage === idx ? 'bg-pink-500 text-white border-pink-400 scale-110' : 'bg-white dark:bg-slate-800 text-slate-400 border-slate-100 dark:border-slate-700'}`}>
-                    {idx + 1}
-                 </div>
-                 {pages.length > 1 && (
-                   <button 
-                     onClick={(e) => { e.stopPropagation(); handleDeletePage(idx); }}
-                     className="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 text-red-500 hover:bg-red-500 hover:text-white transition-all flex items-center justify-center shadow-lg border border-slate-100 dark:border-slate-700"
-                   >
-                     <Trash2 size={18} />
-                   </button>
-                 )}
-              </div>
-              
-              <div className="flex flex-col items-center">
-                <CanvasArea 
-                  onInit={(c) => handlePageInit(idx, c)} 
-                  readOnly={readOnly}
-                  darkMode={darkMode}
-                  canvasWidth={p.width}
-                  canvasHeight={p.height}
-                />
-                
-                {/* Resizers */}
-                <div className={`mt-3 flex gap-4 text-xs font-bold transition-opacity ${currentPage === idx ? 'opacity-100' : 'opacity-0'}`}>
-                   <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 text-slate-500">
-                     <span>L</span>
-                     <input 
-                       type="number" value={p.width} className="w-14 bg-transparent outline-none text-center"
-                       onChange={(e) => handlePageResize(idx, Number(e.target.value), p.height)}
-                     />
-                     <span>px</span>
-                   </div>
-                   <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 text-slate-500">
-                     <span>A</span>
-                     <input 
-                       type="number" value={p.height} className="w-14 bg-transparent outline-none text-center"
-                       onChange={(e) => handlePageResize(idx, p.width, Number(e.target.value))}
-                     />
-                     <span>px</span>
-                   </div>
-                </div>
-              </div>
-
-           </div>
-         ))}
-
-         <button
-            onClick={handleAddPage}
-            className="w-[1024px] h-32 rounded-3xl border-4 border-dashed border-slate-300 dark:border-slate-800 hover:border-pink-500 hover:bg-white dark:hover:bg-slate-900 text-slate-400 hover:text-pink-600 font-black text-xl transition-all flex items-center justify-center gap-4 group shrink-0 shadow-sm"
-         >
-            <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 group-hover:bg-pink-500 group-hover:text-white flex items-center justify-center transition-all scale-100 group-hover:scale-110">
-               +
-            </div>
-            ADICIONAR NOVA PÁGINA
-         </button>
-         <div className="h-24" /> {/* Spacer */}
-      </div>
-
-      <PropertiesPanel 
+    <div className="flex-1 flex overflow-hidden bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
+      <Toolbar
         activeTool={activeTool}
-        color={color}    setColor={setColor}
+        setActiveTool={setActiveTool}
+        onImportImage={importImageFromFile}
+        onUndo={doUndo}
+        onRedo={doRedo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onZoomIn={zoomIn}
+        onZoomOut={zoomOut}
+        onZoomFit={zoomFit}
+        onZoomReset={zoomReset}
+        zoomPercent={Math.round(zoom * 100)}
+        onExport={doExport}
+        onClear={clearAll}
+      />
+
+      <CanvasArea
+        width={canvasSize.width}
+        height={canvasSize.height}
+        background={background}
+        darkMode={darkMode}
+        readOnly={readOnly}
+        onInit={handleInit}
+        onImageDrop={onDropImage}
+        zoom={zoom}
+        onZoomChange={setZoom}
+      />
+
+      <PropertiesPanel
+        activeTool={activeTool}
+        active={activeSnapshot}
+        brushColor={brushColor} setBrushColor={setBrushColor}
         brushSize={brushSize} setBrushSize={setBrushSize}
         fontFamily={fontFamily} setFontFamily={setFontFamily}
         fontSize={fontSize} setFontSize={setFontSize}
-        onDelete={() => {
-           const obj = activeCanvas?.getActiveObject()
-           if (obj) { activeCanvas?.remove(obj); activeCanvas?.discardActiveObject(); activeCanvas?.renderAll(); saveContent(); }
-        }}
-        width={objWidth} setWidth={setObjWidth}
-        height={objHeight} setHeight={setObjHeight}
-        brightness={brightness} setBrightness={setBrightness}
-        contrast={contrast} setContrast={setContrast}
-        saturation={saturation} setSaturation={setSaturation}
+        layers={layers}
+        onSelectLayer={selectLayer}
+        onToggleLayerVisibility={toggleLayerVisibility}
+        onToggleLayerLock={toggleLayerLock}
+        onSetLayerOpacity={setLayerOpacity}
+        onMoveLayer={moveLayer}
+        onDeleteLayer={deleteLayer}
+        onRenameLayer={renameLayer}
+        onSetLayerBlendMode={setLayerBlendMode}
+        canvasWidth={canvasSize.width}
+        canvasHeight={canvasSize.height}
+        onCanvasSize={setCanvasDimensions}
+        background={background}
+        onBackgroundChange={(bg) => { setBackground(bg); setTimeout(() => handleChangeRef.current(), 0) }}
+        onMutateActive={mutateActive}
+        onUpdateAdjust={updateActiveImageAdjust}
+        onResetAdjust={resetActiveAdjust}
+        fileId={fileId}
       />
     </div>
   )
+}
+
+// ── Helpers externos ──────────────────────────────────────
+export interface LayerInfo {
+  idx: number
+  name: string
+  type: string
+  visible: boolean
+  locked: boolean
+  opacity: number
+  isImage: boolean
+  ref: fabric.Object
+}
+
+export interface ActiveSnapshot {
+  type: string
+  isImage: boolean
+  isText: boolean
+  fill: string
+  stroke: string
+  strokeWidth: number
+  opacity: number
+  fontFamily: string
+  fontSize: number
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  textAlign: string
+  adjust: AdjustParams
+  blendMode: GlobalCompositeOperation
+  shadow: string | null
+}
+
+interface FabricObjWithMeta extends fabric.Object { flimasName?: string; flimasKind?: string }
+interface FabricImgWithMeta extends fabric.FabricImage { flimasAdjust?: AdjustParams; flimasName?: string }
+
+function defaultLayerName(o: fabric.Object): string {
+  switch (o.type) {
+    case 'image': return 'Imagem'
+    case 'i-text': case 'text': case 'textbox': return 'Texto'
+    case 'rect': return 'Retângulo'
+    case 'ellipse': case 'circle': return 'Elipse'
+    case 'triangle': return 'Triângulo'
+    case 'line': return 'Linha'
+    case 'path': return 'Traço'
+    case 'group': return 'Grupo'
+    default: return o.type || 'Objeto'
+  }
+}
+
+function snapshotFromObject(obj: fabric.Object): ActiveSnapshot {
+  const isText = obj.type === 'i-text' || obj.type === 'text' || obj.type === 'textbox'
+  const isImage = obj.type === 'image'
+  const t = obj as fabric.IText
+  const img = obj as FabricImgWithMeta
+  const adjust = (img.flimasAdjust as AdjustParams) || { ...DEFAULT_ADJUST }
+  return {
+    type: obj.type || 'object',
+    isImage,
+    isText,
+    fill: typeof obj.fill === 'string' ? obj.fill : '#000000',
+    stroke: typeof obj.stroke === 'string' ? obj.stroke : '',
+    strokeWidth: obj.strokeWidth ?? 0,
+    opacity: obj.opacity ?? 1,
+    fontFamily: isText ? (t.fontFamily || 'sans-serif') : '',
+    fontSize: isText ? (t.fontSize || 40) : 40,
+    bold: isText && t.fontWeight === 'bold',
+    italic: isText && t.fontStyle === 'italic',
+    underline: isText && !!t.underline,
+    textAlign: isText ? (t.textAlign || 'left') : 'left',
+    adjust,
+    blendMode: (obj.globalCompositeOperation as GlobalCompositeOperation) || 'source-over',
+    shadow: obj.shadow ? String(obj.shadow) : null,
+  }
+}
+
+async function loadImageIntoCanvas(c: fabric.Canvas, dataUrl: string): Promise<void> {
+  try {
+    const img = await fabric.FabricImage.fromURL(dataUrl, { crossOrigin: 'anonymous' })
+    // Escala para caber no canvas se for grande
+    const maxW = c.getWidth() * 0.9
+    const maxH = c.getHeight() * 0.9
+    const sx = maxW / (img.width || maxW)
+    const sy = maxH / (img.height || maxH)
+    const s = Math.min(sx, sy, 1)
+    img.scale(s)
+    img.set({ left: c.getWidth() / 2, top: c.getHeight() / 2, originX: 'center', originY: 'center' })
+    ;(img as FabricImgWithMeta).flimasAdjust = { ...DEFAULT_ADJUST }
+    ;(img as FabricImgWithMeta).flimasName = 'Imagem'
+    c.add(img)
+    c.setActiveObject(img)
+    c.requestRenderAll()
+  } catch (e) {
+    console.error('Falha ao carregar imagem', e)
+  }
 }
