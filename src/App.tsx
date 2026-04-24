@@ -765,7 +765,7 @@ ${editor.getHTML()}
              🕓
            </button>
 
-           {!isSheet && !isCode && (
+           {!isSheet && !isCode && !isImage && (
              <button
                onClick={handleExportPDF}
                className="hidden md:flex px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white transition-colors"
@@ -776,14 +776,16 @@ ${editor.getHTML()}
              </button>
            )}
 
-           <button
-             onClick={() => window.print()}
-             className="hidden md:flex w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-violet-600 items-center justify-center transition-colors"
-             title="Imprimir (Ctrl+P)"
-             aria-label="Imprimir"
-           >
-             🖨️
-           </button>
+           {!isImage && !isSheet && !isCode && (
+             <button
+               onClick={() => window.print()}
+               className="hidden md:flex w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-violet-600 items-center justify-center transition-colors"
+               title="Imprimir (Ctrl+P)"
+               aria-label="Imprimir"
+             >
+               🖨️
+             </button>
+           )}
 
            <button
               onClick={saveCurrent}

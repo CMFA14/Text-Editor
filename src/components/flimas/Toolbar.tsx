@@ -1,9 +1,12 @@
+import { useState, useRef, useEffect } from 'react'
 import type { FlimasTool } from './FlimasEditor'
 import {
   MousePointer2, Hand, Brush, Eraser, Type, Square, Circle as CircleIcon,
   Triangle, Minus, MoveUpRight, ImagePlus, Undo2, Redo2,
-  ZoomIn, ZoomOut, Maximize, Download, Trash2,
+  ZoomIn, ZoomOut, Maximize, Download, Trash2, ChevronRight,
 } from 'lucide-react'
+
+type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'pdf'
 
 interface ToolbarProps {
   activeTool: FlimasTool
@@ -18,7 +21,7 @@ interface ToolbarProps {
   onZoomFit: () => void
   onZoomReset: () => void
   zoomPercent: number
-  onExport: (format: 'png' | 'jpeg' | 'webp') => void
+  onExport: (format: ExportFormat) => void
   onClear: () => void
 }
 
@@ -40,7 +43,33 @@ const SHAPES: ToolBtn[] = [
   { id: 'arrow',    icon: <MoveUpRight size={18} />,  tip: 'Seta' },
 ]
 
+const EXPORT_OPTIONS: { fmt: ExportFormat; label: string; hint: string }[] = [
+  { fmt: 'png',  label: 'PNG',  hint: 'Alta qualidade · transparência' },
+  { fmt: 'jpeg', label: 'JPEG', hint: 'Compacto · sem transparência' },
+  { fmt: 'webp', label: 'WebP', hint: 'Moderno · web' },
+  { fmt: 'svg',  label: 'SVG',  hint: 'Vetorial · escalável' },
+  { fmt: 'pdf',  label: 'PDF',  hint: 'Documento imprimível' },
+]
+
 export default function Toolbar(p: ToolbarProps) {
+  const [exportOpen, setExportOpen] = useState(false)
+  const exportRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!exportOpen) return
+    const onDocClick = (e: MouseEvent) => {
+      if (!exportRef.current) return
+      if (!exportRef.current.contains(e.target as Node)) setExportOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setExportOpen(false) }
+    document.addEventListener('mousedown', onDocClick)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDocClick)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [exportOpen])
+
   const toolBtn = (t: ToolBtn) => (
     <button
       key={t.id}
@@ -112,25 +141,39 @@ export default function Toolbar(p: ToolbarProps) {
 
       <div className="flex-1" />
 
-      {/* Export dropdown — simples, 3 botões */}
-      <div className="relative group">
+      {/* Salvar como — menu click-to-open */}
+      <div ref={exportRef} className="relative">
         <button
+          onClick={() => setExportOpen(v => !v)}
           className="w-10 h-10 rounded-xl flex items-center justify-center text-white bg-pink-500 hover:bg-pink-600 transition-colors shadow-md"
-          title="Exportar"
+          title="Salvar como…"
+          aria-haspopup="menu"
+          aria-expanded={exportOpen}
         >
           <Download size={18} />
         </button>
-        <div className="absolute left-12 bottom-0 hidden group-hover:block bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1 z-30 min-w-[120px]">
-          {(['png','jpeg','webp'] as const).map(fmt => (
-            <button
-              key={fmt}
-              onClick={() => p.onExport(fmt)}
-              className="w-full text-left px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-pink-50 dark:hover:bg-slate-700 uppercase"
-            >
-              .{fmt}
-            </button>
-          ))}
-        </div>
+        {exportOpen && (
+          <div
+            role="menu"
+            className="absolute left-12 bottom-0 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 py-2 z-30 min-w-[220px] text-slate-700 dark:text-slate-100"
+          >
+            <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Salvar como
+            </div>
+            {EXPORT_OPTIONS.map(opt => (
+              <button
+                key={opt.fmt}
+                role="menuitem"
+                onClick={() => { setExportOpen(false); p.onExport(opt.fmt) }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-pink-50 dark:hover:bg-slate-700 transition-colors"
+              >
+                <span className="font-bold w-12 text-pink-600 dark:text-pink-400">.{opt.fmt}</span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 flex-1 text-left truncate">{opt.hint}</span>
+                <ChevronRight size={12} className="text-slate-400" />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <button
