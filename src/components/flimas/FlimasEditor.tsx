@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 import * as fabric from 'fabric'
+import { Trash2, Type, Square, Circle, LineChart as LineIcon, MousePointer2, Brush, ImagePlus, Undo2, Redo2, Wand2 } from 'lucide-react'
 import Toolbar from './Toolbar'
 import CanvasArea from './CanvasArea'
 import PropertiesPanel from './PropertiesPanel'
-import PageNavigation from './PageNavigation'
 
 interface FlimasEditorProps {
   fileId: string
@@ -13,7 +13,7 @@ interface FlimasEditorProps {
   onChange: (json: string) => void
 }
 
-export type FlimasTool = 'select' | 'brush' | 'text' | 'rect' | 'circle' | 'crop' | 'image' | 'erase'
+export type FlimasTool = 'select' | 'brush' | 'text' | 'rect' | 'circle' | 'line' | 'crop' | 'image' | 'erase'
 
 export default function FlimasEditor({
   fileId,
@@ -22,7 +22,6 @@ export default function FlimasEditor({
   readOnly,
   onChange
 }: FlimasEditorProps) {
-  const [canvas, setCanvas] = useState<fabric.Canvas | null>(null)
   const [activeTool, setActiveTool] = useState<FlimasTool>('select')
   const [color, setColor] = useState('#7c3aed')
   const [brushSize, setBrushSize] = useState(5)
@@ -31,6 +30,8 @@ export default function FlimasEditor({
   const [brightness, setBrightness] = useState(0)
   const [contrast, setContrast] = useState(0)
   const [saturation, setSaturation] = useState(0)
+  const [objWidth, setObjWidth] = useState(100)
+  const [objHeight, setObjHeight] = useState(100)
 
   // Histórico
   const [history, setHistory] = useState<string[]>([])
@@ -38,61 +39,28 @@ export default function FlimasEditor({
   const isHistoryUpdate = useRef(false)
 
   // Múltiplas páginas
-  const [pages, setPages] = useState<string[]>([])
+  const [pages, setPages] = useState<string[]>([''])
   const [currentPage, setCurrentPage] = useState(0)
-
-  // Initialization will be triggered inside CanvasArea when it mounts
-  const handleCanvasInit = useCallback((c: fabric.Canvas) => {
-    setCanvas(c)
-    
-    // Parse Initial Content (Multi-page ou Legacy Single-page)
-    let initialPages = ['']
-    let startPage = 0
-    if (initialContent) {
-      try {
-        const data = JSON.parse(initialContent)
-        if (data.isFlimasMulti) {
-          initialPages = data.pages
-          startPage = data.currentPage || 0
-        } else {
-          initialPages = [initialContent]
-        }
-      } catch {
-        initialPages = [initialContent]
-      }
-    }
-    setPages(initialPages)
-    setCurrentPage(startPage)
-
-    if (initialPages[startPage]) {
-      try {
-        c.loadFromJSON(initialPages[startPage], () => c.renderAll())
-      } catch (e) {
-        console.error("Failed to load fabric json", e)
-      }
-    }
-
-    c.on('object:modified', saveContent)
-    c.on('object:added', saveContent)
-    c.on('object:removed', saveContent)
-    c.on('path:created', saveContent)
-  }, [initialContent])
+  
+  const fabricCanvases = useRef<(fabric.Canvas | null)[]>([])
+  const activeCanvas = fabricCanvases.current[currentPage]
 
   const saveContent = useCallback(() => {
-    if (!canvas) return
-    const currentJson = JSON.stringify(canvas.toJSON())
+    if (!fabricCanvases.current[currentPage]) return;
     
-    setPages(prevPages => {
-      const nextPages = [...prevPages]
-      nextPages[currentPage] = currentJson
-      
-      const payload = JSON.stringify({
-        isFlimasMulti: true,
-        pages: nextPages,
-        currentPage: currentPage
-      })
-      onChange(payload)
-      return nextPages
+    // Pegar o estado atualizado da página atual antes de salvar o payload total
+    const currentJson = JSON.stringify(fabricCanvases.current[currentPage]!.toJSON())
+    
+    setPages(prev => {
+       const next = [...prev]
+       next[currentPage] = currentJson
+       const payload = JSON.stringify({
+         isFlimasMulti: true,
+         pages: next,
+         currentPage: currentPage
+       })
+       onChange(payload)
+       return next
     })
 
     if (isHistoryUpdate.current) {
@@ -106,178 +74,256 @@ export default function FlimasEditor({
       return next
     })
     setHistoryIndex(prev => prev + 1)
-  }, [canvas, onChange, historyIndex, currentPage])
+  }, [currentPage, onChange, historyIndex])
 
-  useEffect(() => {
-    // Initial save so we have something in history 0
-    if (historyIndex === -1 && canvas) {
-      saveContent()
+  const handlePageInit = (index: number, c: fabric.Canvas) => {
+    fabricCanvases.current[index] = c
+    
+    if (pages[index]) {
+      try {
+        c.loadFromJSON(pages[index], () => {
+          c.renderAll()
+          // Garantir que nenhum objeto comece selecionado ou "travado"
+          c.discardActiveObject()
+        })
+      } catch (e) {
+        console.error("Failed to load page json", e)
+      }
     }
-  }, [canvas, historyIndex, saveContent])
 
-  // Desfazer / Refazer (Ctrl+Z / Ctrl+Y)
+    c.on('object:modified', saveContent)
+    c.on('object:added', (e) => {
+        if(!(e as any).isExternal) saveContent();
+    })
+    c.on('object:removed', saveContent)
+    c.on('path:created', saveContent)
+    
+    // Click listener unificado
+    c.on('mouse:down', (opt: any) => {
+       handleCanvasClick(c, opt)
+    })
+
+    // Sincronizar dimensões do objeto selecionado para o painel
+    c.on('selection:created', (e) => syncDimensions(e.selected?.[0]))
+    c.on('selection:updated', (e) => syncDimensions(e.selected?.[0]))
+    c.on('selection:cleared', () => { setObjWidth(0); setObjHeight(0); })
+  }
+
+  const syncDimensions = (obj?: fabric.Object) => {
+     if (obj) {
+        setObjWidth(Math.round(obj.getScaledWidth()))
+        setObjHeight(Math.round(obj.getScaledHeight()))
+     }
+  }
+
+  // Parse Initial Content
+  useEffect(() => {
+    if (initialContent) {
+      try {
+        const data = JSON.parse(initialContent)
+        if (data.isFlimasMulti) {
+          setPages(data.pages)
+          setCurrentPage(data.currentPage || 0)
+        } else {
+          setPages([initialContent])
+        }
+      } catch {
+        setPages([initialContent])
+      }
+    }
+  }, [initialContent])
+
+  // Atalhos de Teclado
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+      const c = activeCanvas
+      if (!c) return
+      
+      const isEditing = (c.getActiveObject() as any)?.isEditing
+      if (isEditing) return
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const activeObj = c.getActiveObject()
+        if (activeObj) {
+           c.remove(activeObj)
+           c.discardActiveObject()
+           c.renderAll()
+           saveContent()
+        }
+      } else if (e.ctrlKey && e.key.toLowerCase() === 'z') {
         e.preventDefault()
         if (historyIndex > 0) {
           isHistoryUpdate.current = true
           const prevJson = history[historyIndex - 1]
-          canvas?.loadFromJSON(prevJson, () => canvas.renderAll())
+          c.loadFromJSON(prevJson, () => c.renderAll())
           setHistoryIndex(prev => prev - 1)
-          onChange(prevJson)
-        }
-      } else if (e.ctrlKey && e.key.toLowerCase() === 'y') {
-        e.preventDefault()
-        if (historyIndex < history.length - 1) {
-          isHistoryUpdate.current = true
-          const nextJson = history[historyIndex + 1]
-          canvas?.loadFromJSON(nextJson, () => canvas.renderAll())
-          setHistoryIndex(prev => prev + 1)
-          onChange(nextJson)
         }
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [history, historyIndex, canvas, onChange])
+  }, [activeCanvas, history, historyIndex, saveContent])
 
-  useEffect(() => {
-    if (!canvas) return
+  // Ferramentas e Mouse
+  const handleCanvasClick = (c: fabric.Canvas, opt: any) => {
+    // Pegar o estado ATUAL da ferramenta via Ref se necessário,
+    // mas aqui o listener é re-adicionado ou usa escopo do mount.
+    // Usaremos uma referência persistente para a ferramenta ativa para evitar re-binds constantes
+  }
 
-    canvas.isDrawingMode = activeTool === 'brush'
+  const activeToolRef = useRef(activeTool)
+  useEffect(() => { activeToolRef.current = activeTool }, [activeTool])
+
+  const handleCanvasClickCore = useCallback((c: fabric.Canvas, opt: any) => {
+    const tool = activeToolRef.current
+    if (tool === 'select') return
     
-    if (canvas.isDrawingMode) {
-      if (!canvas.freeDrawingBrush) {
-        canvas.freeDrawingBrush = new fabric.PencilBrush(canvas)
-      }
-      canvas.freeDrawingBrush.color = color
-      canvas.freeDrawingBrush.width = brushSize
+    // Se clicou num objeto existente e não é pincel, apenas seleciona
+    if (opt.target && tool !== 'brush') return
+
+    const pointer = c.getPointer(opt.e)
+    let newObj: fabric.Object | null = null
+
+    if (tool === 'text') {
+      newObj = new fabric.IText('Clique para editar', {
+        left: pointer.x, top: pointer.y,
+        fontFamily, fill: color, fontSize,
+        originX: 'center', originY: 'center'
+      })
+    } else if (tool === 'rect') {
+      newObj = new fabric.Rect({
+        left: pointer.x, top: pointer.y,
+        width: 150, height: 100, fill: color,
+        rx: 10, ry: 10, originX: 'center', originY: 'center'
+      })
+    } else if (tool === 'circle') {
+      newObj = new fabric.Circle({
+        left: pointer.x, top: pointer.y,
+        radius: 60, fill: color,
+        originX: 'center', originY: 'center'
+      })
+    } else if (tool === 'line') {
+      newObj = new fabric.Rect({
+        left: pointer.x, top: pointer.y,
+        width: 200, height: 4, fill: color,
+        originX: 'center', originY: 'center'
+      })
     }
 
-    if (activeTool === 'text') {
-      canvas.defaultCursor = 'text'
-    } else if (activeTool === 'select') {
-      canvas.defaultCursor = 'default'
+    if (newObj) {
+      c.add(newObj)
+      c.setActiveObject(newObj)
+      if (tool === 'text') (newObj as fabric.IText).enterEditing()
+      setActiveTool('select')
+      c.renderAll()
+      saveContent()
     }
+  }, [color, fontFamily, fontSize, saveContent])
 
-  }, [canvas, activeTool, color, brushSize])
-
-  // Suporte a adicionar texto via clique
+  // Injetar listener de clique real
   useEffect(() => {
-    if (!canvas) return
-    const onMouseDown = (opt: any) => {
-      if (!opt.target) {
-        const pointer = canvas.getPointer(opt.e)
-        // TEXT
-        if (activeTool === 'text') {
-          const text = new fabric.IText('Digite aqui', {
-            left: pointer.x,
-            top: pointer.y,
-            fontFamily: fontFamily,
-            fill: color,
-            fontSize: fontSize
-          })
-          canvas.add(text)
-          canvas.setActiveObject(text)
-          text.enterEditing()
-          text.selectAll()
-          setActiveTool('select')
-          saveContent()
-        }
-        // RECT
-        else if (activeTool === 'rect') {
-          const rect = new fabric.Rect({
-            left: pointer.x - 50,
-            top: pointer.y - 50,
-            width: 100,
-            height: 100,
-            fill: color,
-            rx: 8,
-            ry: 8
-          })
-          canvas.add(rect)
-          canvas.setActiveObject(rect)
-          setActiveTool('select')
-          saveContent()
-        }
-        // CIRCLE
-        else if (activeTool === 'circle') {
-          const circle = new fabric.Circle({
-            left: pointer.x - 50,
-            top: pointer.y - 50,
-            radius: 50,
-            fill: color
-          })
-          canvas.add(circle)
-          canvas.setActiveObject(circle)
-          setActiveTool('select')
-          saveContent()
-        }
+     fabricCanvases.current.forEach(c => {
+        if (!c) return
+        c.off('mouse:down')
+        c.on('mouse:down', (opt) => handleCanvasClickCore(c, opt))
+     })
+  }, [handleCanvasClickCore])
+
+  // Sincronizar Pincel e Selecionabilidade
+  useEffect(() => {
+    fabricCanvases.current.forEach(c => {
+      if (!c) return
+      c.isDrawingMode = (activeTool === 'brush')
+      if (activeTool === 'brush') {
+         const brush = new fabric.PencilBrush(c)
+         brush.color = color
+         brush.width = brushSize
+         c.freeDrawingBrush = brush
       }
+      c.selection = (activeTool === 'select')
+      c.forEachObject(obj => {
+         obj.selectable = (activeTool === 'select')
+      })
+      c.requestRenderAll()
+    })
+  }, [activeTool, color, brushSize])
+
+  // Sincronizar Propriedades do Objeto Ativo
+  useEffect(() => {
+    if (!activeCanvas) return
+    const obj = activeCanvas.getActiveObject()
+    if (!obj) return
+
+    const changes: any = { fill: color }
+    if (obj.type === 'i-text' || obj.type === 'text') {
+      changes.fontFamily = fontFamily
+      changes.fontSize = fontSize
     }
-    canvas.on('mouse:down', onMouseDown)
-    return () => { canvas.off('mouse:down', onMouseDown) }
-  }, [canvas, activeTool, color, saveContent])
+    
+    obj.set(changes)
+    activeCanvas.renderAll()
+    saveContent()
+  }, [color, fontFamily, fontSize, activeCanvas, saveContent])
+
+  // Sincronizar Width/Height Manuais
+  useEffect(() => {
+     const obj = activeCanvas?.getActiveObject()
+     if (obj && (objWidth > 0 || objHeight > 0)) {
+        if (objWidth !== Math.round(obj.getScaledWidth())) obj.scaleToWidth(objWidth);
+        if (objHeight !== Math.round(obj.getScaledHeight())) obj.scaleToHeight(objHeight);
+        activeCanvas?.renderAll()
+        saveContent()
+     }
+  }, [objWidth, objHeight])
 
   const handleImageAdd = async (dataUrl: string) => {
-    if (!canvas) return
+    if (!activeCanvas) return
     try {
-      // @ts-ignore - Support for v6/v7 FabricImage or v5 Image
       const ImageClass = fabric.FabricImage || fabric.Image
       const img = await ImageClass.fromURL(dataUrl)
-      canvas.add(img)
-      canvas.setActiveObject(img)
+      img.scaleToWidth(400)
+      activeCanvas.add(img)
+      activeCanvas.setActiveObject(img)
       saveContent()
-    } catch (e) {
-      console.error("Falha ao adicionar imagem", e)
-    }
+    } catch (e) { console.error(e) }
   }
 
-  // Handle generic AI stubs
-  const handleAIBgRemoval = () => {
-    alert("Recurso de IA Integrado (Stub): Acesso à API de remoção de fundo (ex: Remove.bg) será ativado no futuro. Por ora, você possui um Canvas avançado onde essas integrações podem ser adicionadas perfeitamente no objeto fabric.Image ativo.")
+  const handleAddPage = () => {
+    setPages(prev => [...prev, ''])
+    setCurrentPage(pages.length)
+    setHistory([''])
+    setHistoryIndex(0)
   }
 
-  const handleClear = () => {
-    if (confirm("Tem certeza que deseja limpar tudo?")) {
-      if (canvas) {
-        canvas.getObjects().forEach(o => canvas.remove(o))
-        canvas.backgroundColor = darkMode ? '#1e293b' : '#ffffff'
-        canvas.renderAll()
-      }
-      saveContent()
+  const handleDeletePage = (idx: number) => {
+    if (pages.length <= 1) return
+    if (confirm("Excluir esta página?")) {
+      const next = pages.filter((_, i) => i !== idx)
+      setPages(next)
+      fabricCanvases.current = fabricCanvases.current.filter((_, i) => i !== idx)
+      setCurrentPage(Math.max(0, currentPage - 1))
     }
   }
-
-  // Sincroniza as mudanças do painel com o texto selecionado
-  useEffect(() => {
-    if (!canvas) return
-    const obj = canvas.getActiveObject()
-    if (obj && (obj.type === 'i-text' || obj.type === 'text')) {
-      (obj as fabric.IText).set({ fill: color, fontFamily, fontSize })
-      canvas.renderAll()
-      saveContent()
-    }
-  }, [color, fontFamily, fontSize, canvas, saveContent])
 
   return (
     <div className="flex-1 flex overflow-hidden bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 relative">
       <Toolbar 
         activeTool={activeTool} 
         setActiveTool={setActiveTool} 
-        onClear={handleClear}
-        onBgRemove={handleAIBgRemoval}
+        onClear={() => {
+           if(confirm("Limpar página atual?")) {
+              activeCanvas?.clear()
+              activeCanvas!.backgroundColor = darkMode ? '#1e293b' : '#ffffff'
+              saveContent()
+           }
+        }}
+        onBgRemove={() => alert("IA stub")}
         onImageRequest={() => {
-           const input = document.createElement('input')
-           input.type = 'file'
-           input.accept = 'image/*'
+           const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*';
            input.onchange = (e: any) => {
              const file = e.target.files[0]
              if (file) {
-               const reader = new FileReader()
-               reader.onload = (f) => handleImageAdd(f.target?.result as string)
-               reader.readAsDataURL(file)
+               const reader = new FileReader(); reader.onload = (f) => handleImageAdd(f.target?.result as string); reader.readAsDataURL(file)
              }
            }
            input.click()
@@ -285,82 +331,61 @@ export default function FlimasEditor({
         onUndo={() => {
            if (historyIndex > 0) {
               isHistoryUpdate.current = true
-              const prevJson = history[historyIndex - 1]
-              canvas?.loadFromJSON(prevJson, () => canvas.renderAll())
+              const json = history[historyIndex - 1]
+              activeCanvas?.loadFromJSON(json, () => activeCanvas.renderAll())
               setHistoryIndex(prev => prev - 1)
-              saveContent()
            }
         }}
         onRedo={() => {
            if (historyIndex < history.length - 1) {
               isHistoryUpdate.current = true
-              const nextJson = history[historyIndex + 1]
-              canvas?.loadFromJSON(nextJson, () => canvas.renderAll())
+              const json = history[historyIndex + 1]
+              activeCanvas?.loadFromJSON(json, () => activeCanvas.renderAll())
               setHistoryIndex(prev => prev + 1)
-              saveContent()
            }
         }}
         canUndo={historyIndex > 0}
         canRedo={historyIndex < history.length - 1}
       />
       
-      <div className="flex-1 overflow-auto bg-slate-100/50 dark:bg-slate-900/50 relative flex items-center justify-center p-8">
-         <CanvasArea 
-           onInit={handleCanvasInit} 
-           readOnly={readOnly}
-           darkMode={darkMode}
-         />
-         
-         <PageNavigation 
-            currentPage={currentPage}
-            totalPages={pages.length}
-            onPageChange={(idx) => {
-               if (!canvas) return
-               saveContent() // ensure current is pushed
-               setCurrentPage(idx)
-               isHistoryUpdate.current = true
-               canvas.clear()
-               if (pages[idx]) {
-                 canvas.loadFromJSON(pages[idx], () => {
-                   canvas.renderAll()
-                   setHistory([pages[idx]])
-                   setHistoryIndex(0)
-                 })
-               }
-            }}
-            onAddPage={() => {
-               if (!canvas) return
-               saveContent()
-               const newPages = [...pages, '']
-               setPages(newPages)
-               setCurrentPage(newPages.length - 1)
-               isHistoryUpdate.current = true
-               canvas.clear()
-               canvas.backgroundColor = darkMode ? '#1e293b' : '#ffffff'
-               canvas.renderAll()
-               setHistory([''])
-               setHistoryIndex(0)
-            }}
-            onDeletePage={() => {
-               if (!canvas || pages.length <= 1) return
-               if (confirm("Deseja realmente excluir este slide?")) {
-                  const newPages = pages.filter((_, i) => i !== currentPage)
-                  const nextIdx = Math.max(0, currentPage - 1)
-                  setPages(newPages)
-                  setCurrentPage(nextIdx)
-                  isHistoryUpdate.current = true
-                  canvas.clear()
-                  if (newPages[nextIdx]) {
-                    canvas.loadFromJSON(newPages[nextIdx], () => {
-                      canvas.renderAll()
-                      setHistory([newPages[nextIdx]])
-                      setHistoryIndex(0)
-                      saveContent()
-                    })
-                  }
-               }
-            }}
-         />
+      <div className="flex-1 overflow-auto bg-slate-200 dark:bg-slate-950 p-12 flex flex-col items-center gap-16 custom-scrollbar scroll-smooth">
+         {pages.map((p, idx) => (
+           <div 
+             key={idx}
+             onClick={() => setCurrentPage(idx)}
+             className={`relative transition-all duration-300 ${currentPage === idx ? 'ring-4 ring-pink-500 ring-offset-8 ring-offset-slate-200 dark:ring-offset-slate-950 rounded-lg' : 'opacity-60 grayscale-[0.3]'}`}
+           >
+              <div className="absolute -left-20 top-0 flex flex-col items-center gap-4">
+                 <div className={`w-12 h-12 rounded-2xl shadow-xl flex items-center justify-center font-black text-lg border-2 transition-all ${currentPage === idx ? 'bg-pink-500 text-white border-pink-400 scale-110' : 'bg-white dark:bg-slate-800 text-slate-400 border-slate-100 dark:border-slate-700'}`}>
+                    {idx + 1}
+                 </div>
+                 {pages.length > 1 && (
+                   <button 
+                     onClick={(e) => { e.stopPropagation(); handleDeletePage(idx); }}
+                     className="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 text-red-500 hover:bg-red-500 hover:text-white transition-all flex items-center justify-center shadow-lg border border-slate-100 dark:border-slate-700"
+                   >
+                     <Trash2 size={18} />
+                   </button>
+                 )}
+              </div>
+              <CanvasArea 
+                onInit={(c) => handlePageInit(idx, c)} 
+                readOnly={readOnly}
+                darkMode={darkMode}
+              />
+           </div>
+         ))}
+
+         <button
+            onClick={handleAddPage}
+            className="w-[1024px] h-32 rounded-3xl border-4 border-dashed border-slate-300 dark:border-slate-800 hover:border-pink-500 hover:bg-white dark:hover:bg-slate-900 text-slate-400 hover:text-pink-600 font-black text-xl transition-all flex items-center justify-center gap-4 group shrink-0 shadow-sm"
+         >
+            <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 group-hover:bg-pink-500 group-hover:text-white flex items-center justify-center transition-all scale-100 group-hover:scale-110">
+               +
+            </div>
+            ADICIONAR NOVA PÁGINA
+         </button>
+         <div className="h-24" /> {/* Spacer */}
       </div>
 
       <PropertiesPanel 
@@ -369,58 +394,16 @@ export default function FlimasEditor({
         brushSize={brushSize} setBrushSize={setBrushSize}
         fontFamily={fontFamily} setFontFamily={setFontFamily}
         fontSize={fontSize} setFontSize={setFontSize}
-        brightness={brightness}
-        setBrightness={(b) => {
-           setBrightness(b);
-           applyFilter('brightness', b / 100);
+        onDelete={() => {
+           const obj = activeCanvas?.getActiveObject()
+           if (obj) { activeCanvas?.remove(obj); activeCanvas?.discardActiveObject(); activeCanvas?.renderAll(); saveContent(); }
         }}
-        contrast={contrast}
-        setContrast={(c) => {
-           setContrast(c);
-           applyFilter('contrast', c / 100);
-        }}
-        saturation={saturation}
-        setSaturation={(s) => {
-           setSaturation(s)
-           applyFilter('saturation', s / 100)
-        }}
+        width={objWidth} setWidth={setObjWidth}
+        height={objHeight} setHeight={setObjHeight}
+        brightness={brightness} setBrightness={setBrightness}
+        contrast={contrast} setContrast={setContrast}
+        saturation={saturation} setSaturation={setSaturation}
       />
     </div>
   )
-
-  // Implementation helper for filters
-  function applyFilter(type: string, value: number) {
-     if (!canvas) return;
-     const obj = canvas.getActiveObject();
-     if (!obj || obj.type !== 'image') {
-        alert("Selecione uma imagem para aplicar o ajuste!");
-        return;
-     }
-
-     const img = obj as fabric.Image;
-     let filterFunc: fabric.IBaseFilter | undefined;
-
-     // Basic stub for generic fabric image filters
-     if (type === 'brightness') {
-        filterFunc = new fabric.filters.Brightness({ brightness: value });
-     } else if (type === 'contrast') {
-        filterFunc = new fabric.filters.Contrast({ contrast: value });
-     } else if (type === 'saturation') {
-        filterFunc = new fabric.filters.Saturation({ saturation: value });
-     }
-
-     if (filterFunc) {
-        // Replace or append
-        img.filters = img.filters || [];
-        const existingIdx = img.filters.findIndex((f) => f && (f as any).type === filterFunc?.type);
-        if (existingIdx > -1) {
-           (img.filters as fabric.IBaseFilter[])[existingIdx] = filterFunc;
-        } else {
-           (img.filters as fabric.IBaseFilter[]).push(filterFunc);
-        }
-        img.applyFilters();
-        canvas.renderAll();
-        saveContent();
-     }
-  }
 }

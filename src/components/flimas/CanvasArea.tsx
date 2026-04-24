@@ -27,13 +27,31 @@ export default function CanvasArea({ onInit, readOnly, darkMode }: CanvasAreaPro
     fabricRef.current = canvas
     onInit(canvas)
 
+    // Fit to container initial zoom
+    const fitToContainer = () => {
+      const padding = 60
+      const scaleX = (containerRef.current!.clientWidth - padding) / canvas.width
+      const scaleY = (containerRef.current!.clientHeight - padding) / canvas.height
+      const scale = Math.min(scaleX, scaleY, 1)
+      
+      canvas.setZoom(scale)
+      const center = canvas.getCenter()
+      canvas.absolutePan({ 
+        x: (canvas.width * scale - containerRef.current!.clientWidth) / 2 + (center.left * scale), 
+        y: (canvas.height * scale - containerRef.current!.clientHeight) / 2 + (center.top * scale)
+      })
+    }
+
+    setTimeout(fitToContainer, 100)
+
     // Zoom and Pan
     canvas.on('mouse:wheel', function(this: any, opt: any) {
+      if (!opt.e.ctrlKey && !opt.e.altKey) return // Apenas zoom com modificador ou se desejar livre
       var delta = opt.e.deltaY;
       var zoom = canvas.getZoom();
       zoom *= 0.999 ** delta;
       if (zoom > 20) zoom = 20;
-      if (zoom < 0.05) zoom = 0.05;
+      if (zoom < 0.01) zoom = 0.01;
       canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
       opt.e.preventDefault();
       opt.e.stopPropagation();
@@ -41,7 +59,7 @@ export default function CanvasArea({ onInit, readOnly, darkMode }: CanvasAreaPro
 
     canvas.on('mouse:down', function(this: any, opt: any) {
       var evt = opt.e;
-      if (evt.altKey) {
+      if (evt.altKey || evt.button === 1) { // Alt ou botão do meio
         this.isDragging = true;
         this.selection = false;
         this.lastPosX = evt.clientX;
@@ -72,6 +90,7 @@ export default function CanvasArea({ onInit, readOnly, darkMode }: CanvasAreaPro
     });
 
     return () => {
+      canvas.off()
       canvas.dispose()
     }
   }, []) // Empty dep array to init once
@@ -98,8 +117,8 @@ export default function CanvasArea({ onInit, readOnly, darkMode }: CanvasAreaPro
   return (
     <div 
        ref={containerRef} 
-       className="shadow-2xl rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-       style={{ minWidth: 1024, minHeight: 768 }}
+       className="shadow-2xl rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-center transition-all"
+       style={{ width: '100%', height: 'fit-content', maxWidth: 1024, aspectRatio: '4/3' }}
     >
       <canvas ref={canvasRef} />
     </div>
