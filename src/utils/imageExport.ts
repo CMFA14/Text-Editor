@@ -26,8 +26,6 @@ interface AdjustParams {
 
 type FabricImageLike = fabric.FabricImage & { flimasAdjust?: AdjustParams }
 
-const CUSTOM_PROPS = ['flimasAdjust', 'flimasName', 'flimasKind']
-
 function parseDoc(raw: string): StoredDoc | null {
   try {
     const parsed = JSON.parse(raw) as Partial<StoredDoc>
