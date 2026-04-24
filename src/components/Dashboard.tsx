@@ -5,7 +5,8 @@ import logoDoc from '../assets/logo-doc.svg'
 import logoSheet from '../assets/logo-sheet.svg'
 import logoCode from '../assets/logo-flimasCode.png'
 import logoStudio from '../assets/logo-flimasStudio.png'
-import { Image as ImageIcon, MoreHorizontal, Download, Trash2, Settings as SettingsIcon, Home } from 'lucide-react'
+import logoNotes from '../assets/logo-flimasNotes.svg'
+import { Image as ImageIcon, StickyNote, MoreHorizontal, Download, Trash2, Settings as SettingsIcon, Home } from 'lucide-react'
 import { getDownloadOptions } from '../utils/download'
 
 interface DashboardProps {
@@ -20,7 +21,7 @@ interface DashboardProps {
   onOpenSettings?: () => void
 }
 
-type FilterKind = 'all' | 'doc' | 'sheet' | 'code' | 'image'
+type FilterKind = 'all' | 'doc' | 'sheet' | 'code' | 'image' | 'notes'
 
 const Icons = {
   Plus: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
@@ -115,6 +116,7 @@ export default function Dashboard({
     sheet: files.filter(f => f.kind === 'sheet').length,
     code: files.filter(f => f.kind === 'code').length,
     image: files.filter(f => f.kind === 'image').length,
+    notes: files.filter(f => f.kind === 'notes').length,
   }), [files])
 
   const handleCreateClick = (kind: FileKind) => {
@@ -127,6 +129,7 @@ export default function Dashboard({
     filter === 'sheet' ? 'Flimas Sheets' :
     filter === 'code'  ? 'Flimas Code' :
     filter === 'image' ? 'Flimas Studio' :
+    filter === 'notes' ? 'Flimas Notes' :
     'Meus Arquivos'
 
   const headerSubtitle =
@@ -134,7 +137,8 @@ export default function Dashboard({
     filter === 'sheet' ? 'Planilhas com células e fórmulas.' :
     filter === 'code'  ? 'Edite, rode e compartilhe trechos de código.' :
     filter === 'image' ? 'Edição avançada de imagens.' :
-    'Documentos, planilhas e códigos em um só lugar.'
+    filter === 'notes' ? 'Anotações rápidas em Markdown.' :
+    'Documentos, planilhas, códigos, imagens e notas em um só lugar.'
 
   return (
     <div className="min-h-screen bg-[var(--bg-app)] transition-colors duration-500 flex">
@@ -151,12 +155,12 @@ export default function Dashboard({
         {/* Brand */}
         <button
           onClick={onGoHome}
-          className="flex items-center gap-3 px-5 py-5 border-b border-[var(--border-light)] w-full text-left hover:bg-[var(--bg-ui-hover)] transition-colors"
+          className="flex flex-col items-start gap-1.5 px-5 py-4 border-b border-[var(--border-light)] w-full text-left hover:bg-[var(--bg-ui-hover)] transition-colors"
           title="Ir para a tela inicial"
           aria-label="Ir para a tela inicial"
         >
-          <img src={flimasLogo} alt="Flimas" className="h-8 w-auto" />
-          <span className="text-[10px] font-bold text-[var(--primary)] uppercase tracking-[0.3em] ml-auto">workspace</span>
+          <img src={flimasLogo} alt="Flimas" className="h-7 w-auto max-w-full" />
+          <span className="text-[10px] font-bold text-[var(--primary)] uppercase tracking-[0.3em] pl-0.5">workspace</span>
         </button>
 
         {/* Nav */}
@@ -196,6 +200,13 @@ export default function Dashboard({
             label={`Flimas Studio (${counts.image})`}
             active={filter === 'image'}
             onClick={() => setFilter('image')}
+          />
+
+          <SideNav
+            icon={<img src={logoNotes} alt="" className="w-5 h-5" />}
+            label={`Flimas Notes (${counts.notes})`}
+            active={filter === 'notes'}
+            onClick={() => setFilter('notes')}
           />
         </nav>
 
@@ -332,6 +343,17 @@ export default function Dashboard({
                         <div>
                           <div>Nova Imagem</div>
                           <div className="text-[11px] font-medium text-slate-500">Flimas Studio</div>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => handleCreateClick('notes')}
+                        className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[var(--primary-light)] dark:hover:bg-slate-700 transition-colors border-t border-[var(--border-light)]"
+                        role="menuitem"
+                      >
+                        <img src={logoNotes} alt="" className="w-6 h-6" />
+                        <div>
+                          <div>Nova Nota</div>
+                          <div className="text-[11px] font-medium text-slate-500">Flimas Notes</div>
                         </div>
                       </button>
                     </div>

@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <defs>
+    <linearGradient id="flimasNotesGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="60%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#b45309"/>
+    </linearGradient>
+    <linearGradient id="flimasNotesPaper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fffbeb"/>
+      <stop offset="100%" stop-color="#fef3c7"/>
+    </linearGradient>
+    <filter id="flimasNotesShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="2"/>
+    </filter>
+  </defs>
+
+  <!-- Post-it / nota adesiva com canto dobrado -->
+  <g>
+    <!-- Sombra -->
+    <path d="M 20 20 L 92 20 L 100 88 L 90 100 L 22 100 Z" fill="rgba(180,83,9,0.15)" filter="url(#flimasNotesShadow)" transform="translate(3,4)"/>
+
+    <!-- Papel principal -->
+    <path d="M 20 20 L 92 20 L 100 88 L 90 100 L 22 100 Z" fill="url(#flimasNotesPaper)" stroke="rgba(180,83,9,0.2)" stroke-width="1"/>
+
+    <!-- Canto dobrado -->
+    <path d="M 90 100 L 100 88 L 86 92 Z" fill="rgba(180,83,9,0.22)"/>
+
+    <!-- Faixa colorida no topo -->
+    <path d="M 20 20 L 92 20 L 93 34 L 20 34 Z" fill="url(#flimasNotesGrad)"/>
+
+    <!-- Linhas de texto simuladas -->
+    <rect x="28" y="46" width="54" height="3" rx="1.5" fill="#92400e" opacity="0.55"/>
+    <rect x="28" y="56" width="60" height="3" rx="1.5" fill="#92400e" opacity="0.45"/>
+    <rect x="28" y="66" width="46" height="3" rx="1.5" fill="#92400e" opacity="0.35"/>
+    <rect x="28" y="76" width="52" height="3" rx="1.5" fill="#92400e" opacity="0.30"/>
+    <rect x="28" y="86" width="38" height="3" rx="1.5" fill="#92400e" opacity="0.25"/>
+  </g>
+</svg>
