@@ -29,6 +29,7 @@ import logoDoc from './assets/logo-doc.svg'
 import logoSheet from './assets/logo-sheet.svg'
 import logoCode from './assets/logo-flimasCode.png'
 import logoStudio from './assets/logo-flimasStudio.png'
+import logoNotes from './assets/logo-flimasNotes.svg'
 import MenuBar from './components/MenuBar'
 import FindReplace from './components/FindReplace'
 import Dashboard from './components/Dashboard'
@@ -75,6 +76,7 @@ function systemPrefersDark(): boolean {
 const SheetEditor = lazy(() => import('./components/SheetEditor'))
 const CodeEditor  = lazy(() => import('./components/CodeEditor'))
 const FlimasEditor = lazy(() => import('./components/flimas/FlimasEditor'))
+const NotesEditor = lazy(() => import('./components/NotesEditor'))
 
 function htmlToMarkdown(html: string): string {
   const div = document.createElement('div')
@@ -274,7 +276,10 @@ export default function App() {
       if (target.kind === 'doc') {
         if (!editor) return prev
         content = editor.getHTML()
-      } else if (target.kind === 'sheet' || target.kind === 'code' || target.kind === 'image') {
+      } else if (
+        target.kind === 'sheet' || target.kind === 'code'
+        || target.kind === 'image' || target.kind === 'notes'
+      ) {
         if (sheetContentRef.current !== null) content = sheetContentRef.current
       }
       const title = documentTitleRef.current
@@ -429,9 +434,12 @@ export default function App() {
   }, [editor])
 
   const handleCreate = useCallback((kind: FileKind = 'doc') => {
-    if (kind === 'code' || kind === 'image') {
-      const isCode = kind === 'code'
-      const created = newFile(kind, isCode ? 'Código sem título' : 'Imagem sem título', '')
+    if (kind === 'code' || kind === 'image' || kind === 'notes') {
+      const defaultTitle =
+        kind === 'code'  ? 'Código sem título'  :
+        kind === 'image' ? 'Imagem sem título'  :
+                           'Nota sem título'
+      const created = newFile(kind, defaultTitle, '')
       setFiles(prev => {
         const next = [created, ...prev]
         saveFiles(next)
@@ -554,7 +562,10 @@ export default function App() {
     setDocumentTitle(snap.title)
     if (snap.kind === 'doc' && editor) {
       editor.commands.setContent(snap.content || '')
-    } else if (snap.kind === 'sheet' || snap.kind === 'code' || snap.kind === 'image') {
+    } else if (
+      snap.kind === 'sheet' || snap.kind === 'code'
+      || snap.kind === 'image' || snap.kind === 'notes'
+    ) {
       sheetContentRef.current = snap.content
       // Force remount by briefly clearing + resetting currentFileId
       setCurrentFileId(null)
@@ -700,6 +711,28 @@ ${editor.getHTML()}
     downloadBlob(universToCsvBlob(parseWorkbookJson(raw)), `${documentTitle}.csv`)
   }, [getCurrentSheetRaw, documentTitle])
 
+  // Studio exports from the header — uses the latest in-memory content
+  const getCurrentImageRaw = useCallback(() => {
+    if (!currentFile || currentFile.kind !== 'image') return null
+    return sheetContentRef.current ?? currentFile.content
+  }, [currentFile])
+
+  const [studioExportOpen, setStudioExportOpen] = useState(false)
+
+  const handleStudioExport = useCallback(async (format: 'png' | 'jpeg' | 'pdf') => {
+    setStudioExportOpen(false)
+    const raw = getCurrentImageRaw()
+    if (!raw) return
+    const { rasterizeFlimasImage, rasterizeFlimasImageToPdfBlob, downloadDataUrl } = await import('./utils/imageExport')
+    const safe = (documentTitle || 'imagem').replace(/[\/\\?%*:|"<>]+/g, '_').trim() || 'imagem'
+    if (format === 'pdf') {
+      await rasterizeFlimasImageToPdfBlob(raw, `${safe}.pdf`)
+      return
+    }
+    const url = await rasterizeFlimasImage(raw, format, format === 'png' ? 1 : 0.92)
+    if (url) downloadDataUrl(url, `${safe}.${format === 'jpeg' ? 'jpg' : 'png'}`)
+  }, [documentTitle, getCurrentImageRaw])
+
   const wordCount = editor?.storage.characterCount?.words() ?? 0
   const charCount = editor?.storage.characterCount?.characters() ?? 0
 
@@ -772,29 +805,34 @@ ${editor.getHTML()}
   const isSheet = currentFile?.kind === 'sheet'
   const isCode  = currentFile?.kind === 'code'
   const isImage = currentFile?.kind === 'image'
+  const isNotes = currentFile?.kind === 'notes'
 
   const brandLogo =
     isSheet ? logoSheet :
     isCode  ? logoCode  :
     isImage ? logoStudio :
+    isNotes ? logoNotes :
     logoDoc
 
   const brandLabel =
     isSheet ? 'Flimas Sheets' :
     isCode  ? 'Flimas Code'   :
     isImage ? 'Flimas Studio' :
+    isNotes ? 'Flimas Notes'  :
     'Flimas Docs'
 
   const brandSubtitle =
     isSheet ? 'Planilha' :
     isCode  ? 'Código'   :
     isImage ? 'Imagem'   :
+    isNotes ? 'Anotação' :
     'Documento'
 
   const brandAccent =
     isSheet ? 'text-emerald-600' :
     isCode  ? 'text-sky-600'     :
     isImage ? 'text-pink-500'    :
+    isNotes ? 'text-amber-500'   :
     'text-violet-500'
 
   return (
@@ -891,6 +929,61 @@ ${editor.getHTML()}
              </div>
            )}
 
+           {isImage && (
+             <div className="hidden md:block relative">
+               <button
+                 onClick={() => { saveCurrent(); setStudioExportOpen(v => !v) }}
+                 className="px-3 py-1.5 text-xs font-bold rounded-lg bg-pink-600 hover:bg-pink-700 text-white transition-colors flex items-center gap-1.5"
+                 title="Salvar como PNG / JPEG / PDF"
+                 aria-haspopup="menu"
+                 aria-expanded={studioExportOpen}
+               >
+                 Salvar como
+                 <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+               </button>
+               {studioExportOpen && (
+                 <>
+                   <div className="fixed inset-0 z-40" onClick={() => setStudioExportOpen(false)} />
+                   <div className="absolute right-0 mt-2 w-56 bg-[var(--bg-page)] rounded-xl shadow-xl border border-[var(--border-light)] overflow-hidden z-50" role="menu">
+                     <button
+                       onClick={() => handleStudioExport('png')}
+                       className="w-full px-4 py-2.5 flex items-center justify-between text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[var(--primary-light)] dark:hover:bg-slate-700 transition-colors"
+                       role="menuitem"
+                     >
+                       <div className="flex flex-col">
+                         <span>PNG</span>
+                         <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">Qualidade máxima</span>
+                       </div>
+                       <span className="text-[10px] font-bold text-pink-500">.png</span>
+                     </button>
+                     <button
+                       onClick={() => handleStudioExport('jpeg')}
+                       className="w-full px-4 py-2.5 flex items-center justify-between text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[var(--primary-light)] dark:hover:bg-slate-700 transition-colors border-t border-[var(--border-light)]"
+                       role="menuitem"
+                     >
+                       <div className="flex flex-col">
+                         <span>JPEG</span>
+                         <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">Arquivo menor</span>
+                       </div>
+                       <span className="text-[10px] font-bold text-amber-500">.jpg</span>
+                     </button>
+                     <button
+                       onClick={() => handleStudioExport('pdf')}
+                       className="w-full px-4 py-2.5 flex items-center justify-between text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[var(--primary-light)] dark:hover:bg-slate-700 transition-colors border-t border-[var(--border-light)]"
+                       role="menuitem"
+                     >
+                       <div className="flex flex-col">
+                         <span>PDF</span>
+                         <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">Imagem em uma página</span>
+                       </div>
+                       <span className="text-[10px] font-bold text-rose-500">.pdf</span>
+                     </button>
+                   </div>
+                 </>
+               )}
+             </div>
+           )}
+
            <button
              onClick={() => setReadOnly(v => !v)}
              className={`flex w-9 h-9 rounded-lg items-center justify-center transition-colors ${readOnly ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-violet-600'}`}
@@ -910,7 +1003,7 @@ ${editor.getHTML()}
              🕓
            </button>
 
-           {!isSheet && !isCode && !isImage && (
+           {!isSheet && !isCode && !isImage && !isNotes && (
              <button
                onClick={handleExportPDF}
                className="hidden md:flex px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white transition-colors"
@@ -921,7 +1014,7 @@ ${editor.getHTML()}
              </button>
            )}
 
-           {!isImage && !isSheet && !isCode && (
+           {!isImage && !isSheet && !isCode && !isNotes && (
              <button
                onClick={() => window.print()}
                className="hidden md:flex w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-violet-600 items-center justify-center transition-colors"
@@ -1019,6 +1112,26 @@ ${editor.getHTML()}
             readOnly={readOnly}
             onChange={(json) => {
               sheetContentRef.current = json
+              setSaved(false)
+            }}
+          />
+        </Suspense>
+      ) : isNotes && currentFile ? (
+        <Suspense fallback={
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <img src={logoNotes} alt="" className="w-16 h-16 mb-3 mx-auto animate-pulse" />
+              <p className="text-slate-500 dark:text-slate-400 font-semibold">Carregando Flimas Notes…</p>
+            </div>
+          </div>
+        }>
+          <NotesEditor
+            fileId={currentFile.id}
+            initialContent={currentFile.content}
+            darkMode={darkMode}
+            readOnly={readOnly}
+            onChange={(text) => {
+              sheetContentRef.current = text
               setSaved(false)
             }}
           />
