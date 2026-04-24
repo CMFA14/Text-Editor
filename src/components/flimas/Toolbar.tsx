@@ -1,6 +1,6 @@
 import React from 'react'
 import { FlimasTool } from './FlimasEditor'
-import { MousePointer2, Type, Crop, ImagePlus, Eraser, Trash2, Wand2, Brush, Square, Circle, Undo2, Redo2 } from 'lucide-react'
+import { MousePointer2, Type, Crop, ImagePlus, Eraser, Trash2, Wand2, Brush, Square, Circle, Undo2, Redo2, Minus } from 'lucide-react'
 
 interface ToolbarProps {
   activeTool: FlimasTool
@@ -18,25 +18,47 @@ export default function Toolbar({
   activeTool, setActiveTool, onClear, onBgRemove, onImageRequest,
   onUndo, onRedo, canUndo, canRedo
 }: ToolbarProps) {
-  const tools: { id: FlimasTool; icon: React.ReactNode; tooltip: string }[] = [
-    { id: 'select', icon: <MousePointer2 size={20} />, tooltip: 'Selecionar (V)' },
-    { id: 'brush', icon: <Brush size={20} />, tooltip: 'Pincel Livre (B)' },
-    { id: 'text', icon: <Type size={20} />, tooltip: 'Texto (T)' },
-    { id: 'rect', icon: <Square size={20} />, tooltip: 'Retângulo' },
-    { id: 'circle', icon: <Circle size={20} />, tooltip: 'Círculo' },
+  const mainTools: { id: FlimasTool; icon: React.ReactNode; tooltip: string }[] = [
+    { id: 'select', icon: <MousePointer2 size={18} />, tooltip: 'Selecionar (V)' },
+    { id: 'brush', icon: <Brush size={18} />, tooltip: 'Pincel Livre (B)' },
+    { id: 'text', icon: <Type size={18} />, tooltip: 'Texto (T)' },
+  ]
+
+  const shapeTools: { id: FlimasTool; icon: React.ReactNode; tooltip: string }[] = [
+    { id: 'rect', icon: <Square size={18} />, tooltip: 'Retângulo' },
+    { id: 'circle', icon: <Circle size={18} />, tooltip: 'Círculo' },
+    { id: 'line', icon: <Minus size={18} />, tooltip: 'Linha' },
   ]
 
   return (
     <div className="w-16 flex flex-col items-center py-4 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 gap-4 shrink-0 z-10 shadow-sm">
       <div className="text-pink-500 font-bold text-xs mb-2">Tools</div>
       
-      {tools.map(t => (
+      {mainTools.map(t => (
         <button
           key={t.id}
           onClick={() => setActiveTool(t.id)}
-          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
+          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
             activeTool === t.id 
-              ? 'bg-pink-100 text-pink-600 dark:bg-pink-900/40 dark:text-pink-400' 
+              ? 'bg-pink-500 text-white shadow-lg shadow-pink-200 dark:shadow-none' 
+              : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+          title={t.tooltip}
+        >
+          {t.icon}
+        </button>
+      ))}
+
+      <div className="w-8 h-px bg-slate-100 dark:bg-slate-800 my-1" />
+      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Shapes</div>
+
+      {shapeTools.map(t => (
+        <button
+          key={t.id}
+          onClick={() => setActiveTool(t.id)}
+          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+            activeTool === t.id 
+              ? 'bg-pink-500 text-white shadow-lg shadow-pink-200 dark:shadow-none' 
               : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
           title={t.tooltip}
