@@ -111,6 +111,7 @@ export default function FlimasEditor({
   const isRestoringRef = useRef(false)
   const suspendChangeRef = useRef(false)
   const initialImportedRef = useRef(false)
+  const clipboardRef = useRef<fabric.Object | null>(null)
 
   // ── Helpers ──────────────────────────────────────────
   const getCanvas = () => canvasRef.current
@@ -355,6 +356,75 @@ export default function FlimasEditor({
     return () => { c.off('mouse:down', onMouseDown) }
   }, [activeTool, brushColor, fontFamily, fontSize, readOnly])
 
+  // ── Clipboard interno (copy/cut/paste/duplicate) ───────
+  const doCopy = useCallback(async (): Promise<fabric.Object | null> => {
+    const c = getCanvas(); if (!c) return null
+    const active = c.getActiveObject()
+    if (!active) return null
+    // clone preserva ActiveSelection (multi-seleção) e custom props
+    const cloned = await active.clone(CUSTOM_PROPS)
+    clipboardRef.current = cloned
+    return cloned
+  }, [])
+
+  const doPaste = useCallback(async () => {
+    const c = getCanvas(); if (!c) return
+    if (readOnly) return
+    const source = clipboardRef.current
+    if (!source) return
+    // clone novamente pra poder colar várias vezes sem duplicar a referência
+    const cloned = await source.clone(CUSTOM_PROPS)
+    cloned.set({
+      left: (cloned.left ?? 0) + 20,
+      top:  (cloned.top ?? 0) + 20,
+      evented: true,
+    })
+    // mantém a referência do clipboard com o novo offset pra próximos paste incrementarem
+    clipboardRef.current = cloned
+    // Se for ActiveSelection (multi-seleção), expandir pra múltiplos add + seleção
+    const maybeSel = cloned as fabric.Object & { canvas?: fabric.Canvas; forEachObject?: (fn: (o: fabric.Object) => void) => void }
+    if (cloned.type === 'activeSelection' && typeof maybeSel.forEachObject === 'function') {
+      maybeSel.canvas = c
+      maybeSel.forEachObject((o: fabric.Object) => c.add(o))
+      ;(cloned as fabric.Object & { setCoords: () => void }).setCoords()
+    } else {
+      c.add(cloned)
+    }
+    c.setActiveObject(cloned)
+    c.requestRenderAll()
+    handleChangeRef.current()
+  }, [readOnly])
+
+  const doCut = useCallback(async () => {
+    const c = getCanvas(); if (!c) return
+    if (readOnly) return
+    await doCopy()
+    const sel = c.getActiveObjects()
+    sel.forEach(o => c.remove(o))
+    c.discardActiveObject()
+    c.requestRenderAll()
+  }, [doCopy, readOnly])
+
+  const doDuplicate = useCallback(async () => {
+    if (readOnly) return
+    const hadClip = clipboardRef.current
+    await doCopy()
+    await doPaste()
+    // restaura o clipboard anterior se havia — Ctrl+D não deve "roubar" o copy manual
+    if (hadClip) clipboardRef.current = hadClip
+  }, [doCopy, doPaste, readOnly])
+
+  const doSelectAll = useCallback(() => {
+    const c = getCanvas(); if (!c) return
+    if (readOnly) return
+    const all = c.getObjects().filter(o => o.selectable !== false && o.visible !== false)
+    if (all.length === 0) return
+    if (all.length === 1) { c.setActiveObject(all[0]); c.requestRenderAll(); return }
+    const sel = new fabric.ActiveSelection(all, { canvas: c })
+    c.setActiveObject(sel)
+    c.requestRenderAll()
+  }, [readOnly])
+
   // ── Shortcuts de teclado ──────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -366,13 +436,19 @@ export default function FlimasEditor({
       const isEditingText = activeObj && 'isEditing' in activeObj && (activeObj as fabric.IText).isEditing
       if (isEditingText) return
 
+      const ctrl = e.ctrlKey || e.metaKey
+      const k = e.key.toLowerCase()
+
       // Undo / Redo
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
-        e.preventDefault(); doUndo(); return
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
-        e.preventDefault(); doRedo(); return
-      }
+      if (ctrl && k === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); return }
+      if (ctrl && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); doRedo(); return }
+
+      // Copy / Cut / Paste / Duplicate / Select All
+      if (ctrl && k === 'c' && !e.shiftKey) { e.preventDefault(); void doCopy(); return }
+      if (ctrl && k === 'x' && !e.shiftKey) { e.preventDefault(); void doCut(); return }
+      if (ctrl && k === 'v' && !e.shiftKey) { e.preventDefault(); void doPaste(); return }
+      if (ctrl && k === 'd' && !e.shiftKey) { e.preventDefault(); void doDuplicate(); return }
+      if (ctrl && k === 'a' && !e.shiftKey) { e.preventDefault(); doSelectAll(); return }
 
       // Delete
       if ((e.key === 'Delete' || e.key === 'Backspace') && activeObj && !readOnly) {
@@ -384,9 +460,9 @@ export default function FlimasEditor({
         return
       }
 
-      // Ferramentas
+      // Ferramentas (sem modificador)
       if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-        switch (e.key.toLowerCase()) {
+        switch (k) {
           case 'v': setActiveTool('select'); break
           case 'h': setActiveTool('pan'); break
           case 'b': setActiveTool('brush'); break
@@ -479,25 +555,87 @@ export default function FlimasEditor({
   }, [])
 
   // ── Export ─────────────────────────────────────────────
-  const doExport = useCallback((format: 'png' | 'jpeg' | 'webp') => {
+  const doExport = useCallback(async (format: 'png' | 'jpeg' | 'webp' | 'svg' | 'pdf') => {
     const c = getCanvas(); if (!c) return
-    const mime = format === 'png' ? 'image/png' : format === 'jpeg' ? 'image/jpeg' : 'image/webp'
+
     // Reset zoom/pan temporariamente pra export 1:1
     const vpt = c.viewportTransform ? [...c.viewportTransform] : null
     c.setViewportTransform([1, 0, 0, 1, 0, 0])
-    const dataUrl = c.toDataURL({
-      format: format === 'jpeg' ? 'jpeg' : format === 'webp' ? 'webp' : 'png',
-      quality: format === 'png' ? 1 : 0.92,
-      multiplier: 1,
-      enableRetinaScaling: false,
-    })
-    if (vpt) c.setViewportTransform(vpt as fabric.TMat2D)
 
-    const a = document.createElement('a')
-    a.href = dataUrl
-    a.download = `flimas-image.${format}`
-    a.click()
-    void mime
+    try {
+      if (format === 'svg') {
+        const svg = c.toSVG()
+        const blob = new Blob([svg], { type: 'image/svg+xml' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'flimas-image.svg'
+        a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 2000)
+        return
+      }
+
+      const imgFormat: 'png' | 'jpeg' | 'webp' =
+        format === 'jpeg' ? 'jpeg' :
+        format === 'webp' ? 'webp' : 'png'
+
+      const dataUrl = c.toDataURL({
+        format: imgFormat,
+        quality: imgFormat === 'png' ? 1 : 0.92,
+        multiplier: 1,
+        enableRetinaScaling: false,
+      })
+
+      if (format === 'pdf') {
+        const w = c.getWidth()
+        const h = c.getHeight()
+        // Lazy-load html2pdf só quando precisa
+        const html2pdfMod = await import('html2pdf.js')
+        const html2pdf = (html2pdfMod as { default: (...args: unknown[]) => unknown }).default
+        const holder = document.createElement('div')
+        holder.style.width = `${w}px`
+        holder.style.height = `${h}px`
+        holder.style.position = 'fixed'
+        holder.style.left = '-99999px'
+        holder.style.top = '0'
+        const img = document.createElement('img')
+        img.src = dataUrl
+        img.style.width = `${w}px`
+        img.style.height = `${h}px`
+        img.style.display = 'block'
+        holder.appendChild(img)
+        document.body.appendChild(holder)
+        try {
+          await (html2pdf as (...a: unknown[]) => { from: (x: unknown) => { set: (o: unknown) => { save: () => Promise<void> } } })()
+            .from(holder)
+            .set({
+              margin: 0,
+              filename: 'flimas-image.pdf',
+              image: { type: 'jpeg', quality: 0.98 },
+              html2canvas: { scale: 2, useCORS: true },
+              jsPDF: {
+                unit: 'px',
+                format: [w, h],
+                orientation: w >= h ? 'landscape' : 'portrait',
+              },
+            })
+            .save()
+        } finally {
+          holder.remove()
+        }
+        return
+      }
+
+      const a = document.createElement('a')
+      a.href = dataUrl
+      a.download = `flimas-image.${format}`
+      a.click()
+    } catch (err) {
+      console.error('Falha ao exportar', err)
+      alert('Não foi possível exportar. Veja o console.')
+    } finally {
+      if (vpt) c.setViewportTransform(vpt as fabric.TMat2D)
+    }
   }, [])
 
   // ── Clear canvas ───────────────────────────────────────
