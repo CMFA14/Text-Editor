@@ -54,7 +54,7 @@ export default function TemplatePicker({ kind, onPick, onClose }: TemplatePicker
                 const { name, content } = t.build()
                 onPick(name, content)
               }}
-              className="text-left p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+              className="text-left p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:border-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
             >
               <div className="text-2xl mb-2">{t.icon}</div>
               <div className="font-bold text-slate-800 dark:text-slate-100">{t.name}</div>

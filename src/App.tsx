@@ -601,7 +601,7 @@ ${editor.getHTML()}
           <img src={isSheet ? logoSheet : logoDoc} alt={isSheet ? 'Flimas Sheets' : 'Flimas Docs'} className="w-10 h-10" />
           <div className="flex flex-col">
             <span className="font-extrabold text-lg tracking-tight leading-none bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>{isSheet ? 'Flimas Sheets' : 'Flimas Docs'}</span>
-            <span className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isSheet ? 'text-emerald-600' : 'text-indigo-500'}`}>{isSheet ? 'Planilha' : 'Documento'}</span>
+            <span className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isSheet ? 'text-emerald-600' : 'text-violet-500'}`}>{isSheet ? 'Planilha' : 'Documento'}</span>
           </div>
         </div>
 
@@ -615,7 +615,7 @@ ${editor.getHTML()}
               onChange={e => setDocumentTitle(e.target.value)}
               onBlur={() => setEditingTitle(false)}
               onKeyDown={e => (e.key === 'Enter' || e.key === 'Escape') && setEditingTitle(false)}
-              className="w-full bg-slate-100 dark:bg-slate-800 border-2 border-indigo-500/50 rounded-xl px-4 py-1.5 font-semibold text-sm focus:outline-none focus:ring-4 ring-indigo-500/10 transition-all"
+              className="w-full bg-slate-100 dark:bg-slate-800 border-2 border-violet-500/50 rounded-xl px-4 py-1.5 font-semibold text-sm focus:outline-none focus:ring-4 ring-violet-500/10 transition-all"
               autoFocus
             />
           ) : (
@@ -669,7 +669,7 @@ ${editor.getHTML()}
 
            <button
              onClick={() => setReadOnly(v => !v)}
-             className={`flex w-9 h-9 rounded-lg items-center justify-center transition-colors ${readOnly ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600'}`}
+             className={`flex w-9 h-9 rounded-lg items-center justify-center transition-colors ${readOnly ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-violet-600'}`}
              title={readOnly ? 'Editar arquivo' : 'Modo somente leitura'}
              aria-label={readOnly ? 'Sair do modo somente leitura' : 'Ativar somente leitura'}
              aria-pressed={readOnly}
@@ -679,7 +679,7 @@ ${editor.getHTML()}
 
            <button
              onClick={() => setShowHistory(true)}
-             className="flex w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600 items-center justify-center transition-colors"
+             className="flex w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-violet-600 items-center justify-center transition-colors"
              title="Histórico de versões"
              aria-label="Abrir histórico de versões"
            >
@@ -699,7 +699,7 @@ ${editor.getHTML()}
 
            <button
              onClick={() => window.print()}
-             className="hidden md:flex w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600 items-center justify-center transition-colors"
+             className="hidden md:flex w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-violet-600 items-center justify-center transition-colors"
              title="Imprimir (Ctrl+P)"
              aria-label="Imprimir"
            >
@@ -708,7 +708,7 @@ ${editor.getHTML()}
 
            <button
               onClick={saveCurrent}
-              className="flex items-center gap-2 px-3 sm:px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+              className="flex items-center gap-2 px-3 sm:px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-violet-500/20 active:scale-95 transition-all"
               aria-label="Salvar arquivo"
            >
              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
@@ -783,7 +783,7 @@ ${editor.getHTML()}
 
           <footer className="glass-panel border-t border-white px-6 py-2 flex items-center gap-6 text-[11px] font-bold text-slate-500 uppercase tracking-wider select-none">
             <div className="flex items-center gap-1.5">
-               <span className="w-2 h-2 rounded-full bg-indigo-500" />
+               <span className="w-2 h-2 rounded-full bg-violet-500" />
                <span>{wordCount} palavras</span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -795,11 +795,11 @@ ${editor.getHTML()}
 
             <div className="flex items-center gap-4">
                <div className="flex items-center gap-1.5 px-3 py-1 bg-[var(--bg-ui)] rounded-lg">
-                  <span className="text-indigo-500">Ctrl + S</span>
+                  <span className="text-violet-500">Ctrl + S</span>
                   <span className="opacity-50">para salvar</span>
                </div>
                <div className="flex items-center gap-1.5 px-3 py-1 bg-[var(--bg-ui)] rounded-lg">
-                  <span className="text-indigo-500">Ctrl + H</span>
+                  <span className="text-violet-500">Ctrl + H</span>
                   <span className="opacity-50">localizar</span>
                </div>
             </div>

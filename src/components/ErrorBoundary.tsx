@@ -46,7 +46,7 @@ export default class ErrorBoundary extends Component<Props, State> {
           </pre>
           <button
             onClick={this.handleReset}
-            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold transition-colors"
+            className="px-6 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-semibold transition-colors"
           >
             Voltar ao Dashboard
           </button>
