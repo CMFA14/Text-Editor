@@ -136,6 +136,47 @@ export default function MenuBar({
   const [fontSize, setFontSize] = useState(16)
   const [fontFamily, setFontFamily] = useState('Merriweather, serif')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const menuRootRef = useRef<HTMLDivElement>(null)
+
+  const anyMenuOpen =
+    showColorPicker || showHighlightPicker || showTableMenu ||
+    showFileMenu || showInsertMenu || showViewMenu
+
+  // Close when clicking outside the menu bar
+  useEffect(() => {
+    if (!anyMenuOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!menuRootRef.current) return
+      if (!menuRootRef.current.contains(e.target as Node)) {
+        setShowFileMenu(false)
+        setShowInsertMenu(false)
+        setShowViewMenu(false)
+        setShowColorPicker(false)
+        setShowHighlightPicker(false)
+        setShowTableMenu(false)
+      }
+    }
+    // Listen on mousedown so we react before focus shifts to editor
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [anyMenuOpen])
+
+  // Close on Escape
+  useEffect(() => {
+    if (!anyMenuOpen) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowFileMenu(false)
+        setShowInsertMenu(false)
+        setShowViewMenu(false)
+        setShowColorPicker(false)
+        setShowHighlightPicker(false)
+        setShowTableMenu(false)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [anyMenuOpen])
 
   // Sync font size with selection
   useEffect(() => {
@@ -219,18 +260,19 @@ export default function MenuBar({
   }
 
   return (
-    <div className="flex flex-col glass-panel border-b border-white select-none sticky top-16 z-50" onClick={closeAll}>
+    <div ref={menuRootRef} className="flex flex-col glass-panel border-b border-slate-200 dark:border-slate-800 select-none sticky top-16 z-50">
 
       {/* ── Menu Bar Top ───────────────────────────── */}
-      <div className="flex items-center gap-1 px-2 md:px-4 py-1.5 border-b border-white/20 text-sm font-medium overflow-x-auto scrollbar-thin">
+      <div className="flex items-center gap-1 px-2 md:px-4 py-1.5 border-b border-slate-100 dark:border-slate-800 text-sm font-medium">
         {/* File menu */}
         <div className="relative">
           <button
-            className="px-3 py-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-1"
-            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setShowFileMenu(v => !v); setShowInsertMenu(false); setShowViewMenu(false) }}
+            type="button"
+            className={`px-3 py-1 rounded-md transition-colors flex items-center gap-1 ${showFileMenu ? 'bg-[var(--primary-light)] text-[var(--primary)]' : 'hover:bg-[var(--bg-ui-hover)]'}`}
+            onClick={() => { setShowFileMenu(v => !v); setShowInsertMenu(false); setShowViewMenu(false) }}
           >Arquivo <Icons.ChevronDown /></button>
           {showFileMenu && (
-            <div className="absolute top-full left-0 mt-1 w-64 dropdown-menu" onClick={e => e.stopPropagation()}>
+            <div className="absolute top-full left-0 mt-1 w-64 dropdown-menu">
               <MenuItem label="Novo documento" shortcut="Ctrl+N" onClick={() => { onNew(); closeAll() }} />
               <MenuItem label="Imprimir" shortcut="Ctrl+P" onClick={() => { onPrint(); closeAll() }} />
               <div className="h-px bg-slate-200 dark:bg-slate-700 my-1 mx-2" />
@@ -245,16 +287,17 @@ export default function MenuBar({
         {/* Insert menu */}
         <div className="relative">
           <button
-            className="px-3 py-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-1"
-            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setShowInsertMenu(v => !v); setShowFileMenu(false); setShowViewMenu(false) }}
+            type="button"
+            className={`px-3 py-1 rounded-md transition-colors flex items-center gap-1 ${showInsertMenu ? 'bg-[var(--primary-light)] text-[var(--primary)]' : 'hover:bg-[var(--bg-ui-hover)]'}`}
+            onClick={() => { setShowInsertMenu(v => !v); setShowFileMenu(false); setShowViewMenu(false) }}
           >Inserir <Icons.ChevronDown /></button>
           {showInsertMenu && (
-            <div className="absolute top-full left-0 mt-1 w-64 dropdown-menu" onClick={e => e.stopPropagation()}>
+            <div className="absolute top-full left-0 mt-1 w-64 dropdown-menu">
               <MenuItem label="Link" shortcut="Ctrl+K" onClick={() => { setShowLinkModal(true); closeAll() }} />
               <MenuItem label="Imagem por URL" onClick={() => { setShowImageModal(true); closeAll() }} />
               <MenuItem label="Imagem local" onClick={() => { fileInputRef.current?.click(); closeAll() }} />
               <div className="h-px bg-slate-200 dark:bg-slate-700 my-1 mx-2" />
-              <MenuItem label="Tabela" onClick={() => { editor.chain().focus().insertTable({ rows: 3, cols: 3 }).run(); closeAll() }} />
+              <MenuItem label="Tabela 3×3" onClick={() => { editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); closeAll() }} />
               <MenuItem label="Linha horizontal" onClick={() => { editor.chain().focus().setHorizontalRule().run(); closeAll() }} />
               <MenuItem label="Citação" onClick={() => { editor.chain().focus().toggleBlockquote().run(); closeAll() }} />
               <MenuItem label="Lista de tarefas" onClick={() => { editor.chain().focus().toggleTaskList().run(); closeAll() }} />
@@ -265,11 +308,12 @@ export default function MenuBar({
         {/* View menu */}
         <div className="relative">
           <button
-            className="px-3 py-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors flex items-center gap-1"
-            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setShowViewMenu(v => !v); setShowFileMenu(false); setShowInsertMenu(false) }}
+            type="button"
+            className={`px-3 py-1 rounded-md transition-colors flex items-center gap-1 ${showViewMenu ? 'bg-[var(--primary-light)] text-[var(--primary)]' : 'hover:bg-[var(--bg-ui-hover)]'}`}
+            onClick={() => { setShowViewMenu(v => !v); setShowFileMenu(false); setShowInsertMenu(false) }}
           >Visualizar <Icons.ChevronDown /></button>
           {showViewMenu && (
-            <div className="absolute top-full left-0 mt-1 w-64 dropdown-menu" onClick={e => e.stopPropagation()}>
+            <div className="absolute top-full left-0 mt-1 w-64 dropdown-menu">
               <MenuItem label="Localizar e Substituir" shortcut="Ctrl+H" onClick={() => { onToggleFind(); closeAll() }} />
               <div className="h-px bg-slate-200 dark:bg-slate-700 my-1 mx-2" />
               <MenuItem label="Aumentar zoom" onClick={() => { onZoomChange(Math.min(zoom + 10, 200)); closeAll() }} />
@@ -283,9 +327,9 @@ export default function MenuBar({
 
         {/* Zoom Controls */}
         <div className="flex items-center gap-2 bg-[var(--bg-ui)] rounded-lg px-2 py-0.5 border border-slate-200 dark:border-slate-700">
-           <button onClick={() => onZoomChange(Math.max(zoom-10, 50))} className="p-1 hover:text-indigo-500 transition-colors" aria-label="Diminuir zoom" title="Diminuir zoom"><Icons.Minus /></button>
+           <button onClick={() => onZoomChange(Math.max(zoom-10, 50))} className="p-1 hover:text-violet-500 transition-colors" aria-label="Diminuir zoom" title="Diminuir zoom"><Icons.Minus /></button>
            <span className="text-xs w-10 text-center font-bold" aria-live="polite">{zoom}%</span>
-           <button onClick={() => onZoomChange(Math.min(zoom+10, 200))} className="p-1 hover:text-indigo-500 transition-colors" aria-label="Aumentar zoom" title="Aumentar zoom"><Icons.Plus /></button>
+           <button onClick={() => onZoomChange(Math.min(zoom+10, 200))} className="p-1 hover:text-violet-500 transition-colors" aria-label="Aumentar zoom" title="Aumentar zoom"><Icons.Plus /></button>
         </div>
       </div>
 
@@ -307,7 +351,7 @@ export default function MenuBar({
             const found = HEADINGS.find(h => h.label === e.target.value)
             setHeading(found?.level)
           }}
-          className="h-9 px-3 text-xs font-semibold border-none rounded-lg bg-[var(--bg-ui)] text-[var(--text-select)] focus:ring-2 ring-indigo-500 cursor-pointer min-w-[120px]"
+          className="h-9 px-3 text-xs font-semibold border-none rounded-lg bg-[var(--bg-ui)] text-[var(--text-select)] focus:ring-2 ring-violet-500 cursor-pointer min-w-[120px]"
         >
           {HEADINGS.map(h => <option key={h.label} value={h.label}>{h.label}</option>)}
         </select>
@@ -315,7 +359,7 @@ export default function MenuBar({
         <select
           value={fontFamily}
           onChange={e => applyFontFamily(e.target.value)}
-          className="h-9 px-3 text-xs font-semibold border-none rounded-lg bg-[var(--bg-ui)] text-[var(--text-select)] focus:ring-2 ring-indigo-500 cursor-pointer min-w-[150px]"
+          className="h-9 px-3 text-xs font-semibold border-none rounded-lg bg-[var(--bg-ui)] text-[var(--text-select)] focus:ring-2 ring-violet-500 cursor-pointer min-w-[150px]"
         >
           {FONT_FAMILIES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
@@ -378,7 +422,7 @@ export default function MenuBar({
           <Tooltip text="Destaque">
             <button
                onMouseDown={e => {e.preventDefault(); setShowHighlightPicker(!showHighlightPicker); setShowColorPicker(false)}}
-               className={`w-10 h-9 flex items-center justify-center rounded-lg bg-[var(--bg-ui)] transition-colors border border-slate-200 dark:border-slate-700 ${editor.isActive('highlight') ? 'ring-2 ring-indigo-500 bg-indigo-50 dark:bg-indigo-950/30' : 'hover:bg-[var(--bg-ui-hover)]'}`}
+               className={`w-10 h-9 flex items-center justify-center rounded-lg bg-[var(--bg-ui)] transition-colors border border-slate-200 dark:border-slate-700 ${editor.isActive('highlight') ? 'ring-2 ring-violet-500 bg-violet-50 dark:bg-violet-950/30' : 'hover:bg-[var(--bg-ui-hover)]'}`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15.477 12.89 1.515 1.515a2 2 0 0 1 0 2.828l-2.434 2.434a2 2 0 0 1-2.828 0l-1.515-1.515L15.477 12.89z"/><path d="M13.434 3.434a2 2 0 0 1 2.828 0l2.434 2.434a2 2 0 0 1 0 2.828l-5.32 5.32-5.26-5.26 5.318-5.322z"/><path d="M2 22s5-4.5 7-5l-2-2-5 7z"/></svg>
             </button>
@@ -423,7 +467,34 @@ export default function MenuBar({
         <div className="flex gap-0.5">
           <ToolbarBtn title="Inserir Link" active={editor.isActive('link')} onClick={() => setShowLinkModal(true)}><Icons.Link /></ToolbarBtn>
           <ToolbarBtn title="Inserir Imagem" onClick={() => setShowImageModal(true)}><Icons.Image /></ToolbarBtn>
-          <ToolbarBtn title="Tabela" onClick={() => setShowTableMenu(!showTableMenu)}><Icons.Table /></ToolbarBtn>
+          <div className="relative">
+            <ToolbarBtn title="Tabela" active={editor.isActive('table')} onClick={() => setShowTableMenu(!showTableMenu)}><Icons.Table /></ToolbarBtn>
+            {showTableMenu && (
+              <div className="absolute top-full right-0 mt-2 w-60 dropdown-menu">
+                {editor.isActive('table') ? (
+                  <>
+                    <MenuItem label="Adicionar linha acima" onClick={() => { editor.chain().focus().addRowBefore().run(); closeAll() }} />
+                    <MenuItem label="Adicionar linha abaixo" onClick={() => { editor.chain().focus().addRowAfter().run(); closeAll() }} />
+                    <MenuItem label="Remover linha" onClick={() => { editor.chain().focus().deleteRow().run(); closeAll() }} />
+                    <div className="h-px bg-slate-200 dark:bg-slate-700 my-1 mx-2" />
+                    <MenuItem label="Adicionar coluna à esquerda" onClick={() => { editor.chain().focus().addColumnBefore().run(); closeAll() }} />
+                    <MenuItem label="Adicionar coluna à direita" onClick={() => { editor.chain().focus().addColumnAfter().run(); closeAll() }} />
+                    <MenuItem label="Remover coluna" onClick={() => { editor.chain().focus().deleteColumn().run(); closeAll() }} />
+                    <div className="h-px bg-slate-200 dark:bg-slate-700 my-1 mx-2" />
+                    <MenuItem label="Alternar cabeçalho" onClick={() => { editor.chain().focus().toggleHeaderRow().run(); closeAll() }} />
+                    <MenuItem label="Remover tabela" onClick={() => { editor.chain().focus().deleteTable().run(); closeAll() }} />
+                  </>
+                ) : (
+                  <>
+                    <MenuItem label="Inserir tabela 2×2" onClick={() => { editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run(); closeAll() }} />
+                    <MenuItem label="Inserir tabela 3×3" onClick={() => { editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); closeAll() }} />
+                    <MenuItem label="Inserir tabela 4×4" onClick={() => { editor.chain().focus().insertTable({ rows: 4, cols: 4, withHeaderRow: true }).run(); closeAll() }} />
+                    <MenuItem label="Inserir tabela 5×5" onClick={() => { editor.chain().focus().insertTable({ rows: 5, cols: 5, withHeaderRow: true }).run(); closeAll() }} />
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex-1" />
@@ -436,14 +507,14 @@ export default function MenuBar({
       {showLinkModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowLinkModal(false)}>
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl p-6 w-[400px] border border-slate-200 dark:border-slate-800 animate-in zoom-in duration-300" onClick={e => e.stopPropagation()}>
-            <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-indigo-500"><Icons.Link /> Inserir Link</h3>
+            <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-violet-500"><Icons.Link /> Inserir Link</h3>
             <div className="space-y-4">
               <input
                 type="url" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} placeholder="https://exemplo.com" autoFocus
-                className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl px-4 py-3 focus:ring-2 ring-indigo-500 font-medium transition-all"
+                className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl px-4 py-3 focus:ring-2 ring-violet-500 font-medium transition-all"
               />
               <div className="flex gap-3">
-                <button onClick={applyLink} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl shadow-lg transition-all">Confirmar</button>
+                <button onClick={applyLink} className="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-bold py-3 rounded-xl shadow-lg transition-all">Confirmar</button>
                 <button onClick={() => {editor.chain().focus().unsetLink().run(); setShowLinkModal(false)}} className="px-4 text-xs font-bold text-red-500 hover:underline">Remover</button>
               </div>
             </div>
@@ -455,25 +526,25 @@ export default function MenuBar({
       {showImageModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowImageModal(false)}>
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl p-6 w-[400px] border border-slate-200 dark:border-slate-800 animate-in zoom-in duration-300" onClick={e => e.stopPropagation()}>
-            <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-indigo-500"><Icons.Image /> Inserir Imagem</h3>
+            <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-violet-500"><Icons.Image /> Inserir Imagem</h3>
             <div className="space-y-5">
               <div>
                  <p className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Pela URL</p>
-                 <input type="url" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl px-4 py-3 focus:ring-2 ring-indigo-500 font-medium transition-all" />
+                 <input type="url" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl px-4 py-3 focus:ring-2 ring-violet-500 font-medium transition-all" />
               </div>
 
               <div className="relative">
                 <p className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Do Computador</p>
-                <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl py-8 cursor-pointer hover:bg-indigo-50 transition-colors group">
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl py-8 cursor-pointer hover:bg-violet-50 transition-colors group">
                    <Icons.File />
-                   <span className="text-sm font-bold mt-2 text-slate-400 group-hover:text-indigo-500 font-inter">Escolher arquivo</span>
+                   <span className="text-sm font-bold mt-2 text-slate-400 group-hover:text-violet-500 font-inter">Escolher arquivo</span>
                    <input type="file" ref={fileInputRef} accept="image/*" className="hidden" onChange={e => {handleImageFile(e); setShowImageModal(false)}} />
                 </label>
               </div>
 
               <div className="flex gap-3">
-                 <button onClick={applyImage} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl shadow-lg transition-all">Inserir URL</button>
-                 <button onClick={() => setShowImageModal(false)} className="px-6 text-sm font-bold text-slate-400 hover:text-indigo-500">Fechar</button>
+                 <button onClick={applyImage} className="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-bold py-3 rounded-xl shadow-lg transition-all">Inserir URL</button>
+                 <button onClick={() => setShowImageModal(false)} className="px-6 text-sm font-bold text-slate-400 hover:text-violet-500">Fechar</button>
               </div>
             </div>
           </div>

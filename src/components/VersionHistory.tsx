@@ -79,14 +79,14 @@ export default function VersionHistory({ fileId, onRestore, onClose }: VersionHi
           {versions.map((v, i) => (
             <div
               key={v.timestamp}
-              className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-colors flex items-start gap-4"
+              className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-violet-500 transition-colors flex items-start gap-4"
             >
               <img src={v.kind === 'sheet' ? logoSheet : logoDoc} alt="" className="w-8 h-8 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="font-bold text-slate-800 dark:text-slate-100 truncate">{v.title || 'Sem título'}</span>
                   {i === 0 && (
-                    <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    <span className="text-[10px] font-bold bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300 px-2 py-0.5 rounded-full uppercase tracking-wider">
                       Mais recente
                     </span>
                   )}
@@ -102,7 +102,7 @@ export default function VersionHistory({ fileId, onRestore, onClose }: VersionHi
                     onRestore(v)
                   }
                 }}
-                className="px-3 py-1.5 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors whitespace-nowrap"
+                className="px-3 py-1.5 text-xs font-bold rounded-lg bg-violet-600 hover:bg-violet-700 text-white transition-colors whitespace-nowrap"
               >
                 Restaurar
               </button>

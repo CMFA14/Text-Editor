@@ -64,7 +64,7 @@ export default function Dashboard({
           <img src={logoDoc} alt="Flimas" className="w-10 h-10" />
           <div className="flex flex-col">
             <span className="font-extrabold text-lg tracking-tight leading-none bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>Flimas</span>
-            <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-0.5">Meus Arquivos</span>
+            <span className="text-[10px] font-bold text-violet-500 uppercase tracking-widest mt-0.5">Meus Arquivos</span>
           </div>
         </div>
 
@@ -91,7 +91,7 @@ export default function Dashboard({
         <div className="flex items-center gap-3">
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-6 py-3 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl font-bold border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-all flex items-center gap-2 shadow-sm"
+              className="px-6 py-3 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl font-bold border border-slate-200 dark:border-slate-700 hover:border-violet-500 transition-all flex items-center gap-2 shadow-sm"
             >
               <Icons.Upload />
               Importar
@@ -99,7 +99,7 @@ export default function Dashboard({
             <div className="relative">
               <button
                 onClick={() => setShowCreateMenu(v => !v)}
-                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/20 active:scale-95 transition-all flex items-center gap-2"
+                className="px-6 py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold shadow-lg shadow-violet-500/20 active:scale-95 transition-all flex items-center gap-2"
                 aria-haspopup="menu"
                 aria-expanded={showCreateMenu}
               >
@@ -112,7 +112,7 @@ export default function Dashboard({
                   <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden z-20" role="menu">
                     <button
                       onClick={() => handleCreateClick('doc')}
-                      className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors"
+                      className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-violet-50 dark:hover:bg-slate-700 transition-colors"
                       role="menuitem"
                     >
                       <img src={logoDoc} alt="" className="w-6 h-6" />
@@ -123,7 +123,7 @@ export default function Dashboard({
                     </button>
                     <button
                       onClick={() => handleCreateClick('sheet')}
-                      className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors border-t border-slate-100 dark:border-slate-700"
+                      className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-violet-50 dark:hover:bg-slate-700 transition-colors border-t border-slate-100 dark:border-slate-700"
                       role="menuitem"
                     >
                       <img src={logoSheet} alt="" className="w-6 h-6" />
@@ -149,13 +149,13 @@ export default function Dashboard({
       <div className="flex items-center gap-2 mb-6 text-sm">
         <button
           onClick={() => setFilter('all')}
-          className={`px-4 py-1.5 rounded-full font-semibold transition-colors ${filter === 'all' ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+          className={`px-4 py-1.5 rounded-full font-semibold transition-colors ${filter === 'all' ? 'bg-violet-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
         >
           Todos ({files.length})
         </button>
         <button
           onClick={() => setFilter('doc')}
-          className={`px-4 py-1.5 rounded-full font-semibold transition-colors flex items-center gap-1.5 ${filter === 'doc' ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+          className={`px-4 py-1.5 rounded-full font-semibold transition-colors flex items-center gap-1.5 ${filter === 'doc' ? 'bg-violet-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
           aria-pressed={filter === 'doc'}
         >
           <img src={logoDoc} alt="" className="w-4 h-4" /> Documentos ({files.filter(f => f.kind === 'doc').length})

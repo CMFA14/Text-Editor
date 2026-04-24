@@ -121,19 +121,19 @@ export default function FindReplace({ editor, onClose }: FindReplaceProps) {
             value={findText}
             onChange={e => setFindText(e.target.value)}
             placeholder="Texto a localizar..."
-            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500"
+            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-violet-500"
             autoFocus
           />
           {matchCount > 0 && (
-            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-indigo-600 font-medium bg-indigo-50 px-1.5 py-0.5 rounded">
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-violet-600 font-medium bg-violet-50 px-1.5 py-0.5 rounded">
               {currentMatch}/{matchCount}
             </span>
           )}
         </div>
         <button onClick={() => goToMatch('prev')} disabled={matchCount === 0}
-          className="w-7 h-7 rounded border border-gray-200 hover:bg-indigo-50 text-gray-600 disabled:opacity-40 flex items-center justify-center">↑</button>
+          className="w-7 h-7 rounded border border-gray-200 hover:bg-violet-50 text-gray-600 disabled:opacity-40 flex items-center justify-center">↑</button>
         <button onClick={() => goToMatch('next')} disabled={matchCount === 0}
-          className="w-7 h-7 rounded border border-gray-200 hover:bg-indigo-50 text-gray-600 disabled:opacity-40 flex items-center justify-center">↓</button>
+          className="w-7 h-7 rounded border border-gray-200 hover:bg-violet-50 text-gray-600 disabled:opacity-40 flex items-center justify-center">↓</button>
       </div>
 
       <div className="flex items-center gap-2 flex-1 min-w-64">
@@ -143,14 +143,14 @@ export default function FindReplace({ editor, onClose }: FindReplaceProps) {
           value={replaceText}
           onChange={e => setReplaceText(e.target.value)}
           placeholder="Substituir por..."
-          className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500"
+          className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-violet-500"
         />
         <button onClick={replaceOne} disabled={matchCount === 0}
           className="px-3 py-1.5 text-xs bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-40 font-medium">
           Substituir
         </button>
         <button onClick={replaceAll} disabled={matchCount === 0}
-          className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 font-medium">
+          className="px-3 py-1.5 text-xs bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-40 font-medium">
           Substituir todos
         </button>
       </div>
@@ -158,7 +158,7 @@ export default function FindReplace({ editor, onClose }: FindReplaceProps) {
       <div className="flex items-center gap-3">
         <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none">
           <input type="checkbox" checked={caseSensitive} onChange={e => setCaseSensitive(e.target.checked)}
-            className="accent-indigo-600" />
+            className="accent-violet-600" />
           Aa
         </label>
         <button onClick={onClose} className="w-7 h-7 rounded-full hover:bg-red-50 text-gray-400 hover:text-red-500 flex items-center justify-center text-lg">✕</button>
