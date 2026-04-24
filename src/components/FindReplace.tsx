@@ -51,18 +51,18 @@ export default function FindReplace({ editor, onClose }: FindReplaceProps) {
 
   useEffect(() => {
     findMatches()
-  }, [findText, caseSensitive])
+  }, [findMatches])
 
-  const goToMatch = (direction: 'next' | 'prev') => {
+  const goToMatch = useCallback((direction: 'next' | 'prev') => {
     if (matches.length === 0) return
-    let next = direction === 'next'
+    const next = direction === 'next'
       ? (currentMatch % matches.length) + 1
       : (currentMatch - 2 + matches.length) % matches.length + 1
     setCurrentMatch(next)
     const match = matches[next - 1]
     editor?.commands.setTextSelection({ from: match.from, to: match.to })
     editor?.commands.scrollIntoView()
-  }
+  }, [matches, currentMatch, editor])
 
   const replaceOne = () => {
     if (!editor || matches.length === 0) return
@@ -109,7 +109,7 @@ export default function FindReplace({ editor, onClose }: FindReplaceProps) {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [matches, currentMatch])
+  }, [goToMatch, onClose])
 
   return (
     <div className="bg-white border-b border-gray-200 px-4 py-3 flex flex-wrap items-center gap-3 shadow-sm">

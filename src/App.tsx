@@ -1,5 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
+import { markdownToHtml } from './utils/markdown'
+import { sanitizeHtml } from './utils/sanitize'
+import { loadFiles, saveFiles, newFile } from './storage'
+import type { FileEntry, FileKind } from './types'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import TextAlign from '@tiptap/extension-text-align'
@@ -20,86 +24,17 @@ import Superscript from '@tiptap/extension-superscript'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import { FontSize } from './extensions/FontSize'
+import logoDoc from './assets/logo-doc.svg'
+import logoSheet from './assets/logo-sheet.svg'
 import MenuBar from './components/MenuBar'
 import FindReplace from './components/FindReplace'
 import Dashboard from './components/Dashboard'
+import ErrorBoundary from './components/ErrorBoundary'
+import TemplatePicker from './components/TemplatePicker'
+import VersionHistory from './components/VersionHistory'
+import { pushSnapshot, type Snapshot } from './history'
 
-export interface DocEntry {
-  id: string
-  title: string
-  content: string
-  lastModified: number
-}
-
-const DEFAULT_CONTENT = `
-<h1>📝 Bem-vindo ao DocFlex</h1>
-<p>Este é um editor de texto completo e profissional com suporte a uma grande variedade de formatações e recursos avançados.</p>
-
-<h2>✨ Recursos disponíveis</h2>
-<ul>
-  <li><strong>Negrito</strong>, <em>itálico</em>, <u>sublinhado</u> e <s>tachado</s></li>
-  <li>Títulos de H1 a H6</li>
-  <li>Múltiplas fontes e tamanhos</li>
-  <li>Cores de texto e realce</li>
-  <li>Alinhamento de texto</li>
-  <li>Listas numeradas e com marcadores</li>
-</ul>
-
-<h2>📋 Lista de tarefas</h2>
-<ul data-type="taskList">
-  <li data-type="taskItem" data-checked="true">Criar um editor rico em recursos</li>
-  <li data-type="taskItem" data-checked="true">Adicionar suporte a tabelas</li>
-  <li data-type="taskItem" data-checked="false">Exportar para HTML, TXT e Markdown</li>
-  <li data-type="taskItem" data-checked="false">Localizar e substituir texto</li>
-</ul>
-
-<h2>💬 Exemplo de citação</h2>
-<blockquote>
-  <p>"A simplicidade é a sofisticação máxima." — Leonardo da Vinci</p>
-</blockquote>
-
-<h2>📊 Exemplo de tabela</h2>
-<table>
-  <tbody>
-    <tr>
-      <th>Recurso</th>
-      <th>Descrição</th>
-      <th>Status</th>
-    </tr>
-    <tr>
-      <td>Formatação de texto</td>
-      <td>Negrito, itálico, sublinhado e mais</td>
-      <td>✅ Disponível</td>
-    </tr>
-    <tr>
-      <td>Tabelas</td>
-      <td>Criação e edição de tabelas</td>
-      <td>✅ Disponível</td>
-    </tr>
-    <tr>
-      <td>Imagens</td>
-      <td>Inserção por URL ou arquivo local</td>
-      <td>✅ Disponível</td>
-    </tr>
-    <tr>
-      <td>Exportação</td>
-      <td>HTML, TXT e Markdown</td>
-      <td>✅ Disponível</td>
-    </tr>
-  </tbody>
-</table>
-
-<h2>🖥️ Código</h2>
-<p>Você pode inserir código inline como <code>console.log("Hello World")</code> ou blocos de código:</p>
-<pre><code>function saudacao(nome: string): string {
-  return \`Olá, \${nome}! Bem-vindo ao Editor Pro.\`
-}
-
-const msg = saudacao("Desenvolvedor")
-console.log(msg)</code></pre>
-
-<p>Comece a editar este documento ou apague tudo e crie o seu próprio! 🚀</p>
-`
+const SheetEditor = lazy(() => import('./components/SheetEditor'))
 
 function htmlToMarkdown(html: string): string {
   const div = document.createElement('div')
@@ -161,7 +96,10 @@ function htmlToText(html: string): string {
 }
 
 function downloadFile(content: string, filename: string, type: string) {
-  const blob = new Blob([content], { type })
+  downloadBlob(new Blob([content], { type }), filename)
+}
+
+function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -172,8 +110,8 @@ function downloadFile(content: string, filename: string, type: string) {
 
 export default function App() {
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard')
-  const [documents, setDocuments] = useState<DocEntry[]>([])
-  const [currentDocId, setCurrentDocId] = useState<string | null>(null)
+  const [files, setFiles] = useState<FileEntry[]>([])
+  const [currentFileId, setCurrentFileId] = useState<string | null>(null)
   const [showFind, setShowFind] = useState(false)
   const [zoom, setZoom] = useState(100)
   const [saved, setSaved] = useState(true)
@@ -181,6 +119,15 @@ export default function App() {
   const [documentTitle, setDocumentTitle] = useState('Documento sem título')
   const [editingTitle, setEditingTitle] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
+  const [focusMode, setFocusMode] = useState(false)
+  const [templatePicker, setTemplatePicker] = useState<FileKind | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
+  const [readOnly, setReadOnly] = useState(false)
+
+  const currentFile = useMemo(
+    () => files.find(f => f.id === currentFileId) || null,
+    [files, currentFileId]
+  )
 
   const editor = useEditor({
     extensions: [
@@ -211,66 +158,120 @@ export default function App() {
     onUpdate: () => {
       setSaved(false)
     },
+    editorProps: {
+      handleDrop: (view, event) => {
+        const files = (event as DragEvent).dataTransfer?.files
+        if (!files || files.length === 0) return false
+        const images = Array.from(files).filter(f => f.type.startsWith('image/'))
+        if (images.length === 0) return false
+        event.preventDefault()
+        images.forEach(file => {
+          const reader = new FileReader()
+          reader.onload = () => {
+            const src = typeof reader.result === 'string' ? reader.result : ''
+            if (!src) return
+            const { schema } = view.state
+            const coords = view.posAtCoords({ left: (event as DragEvent).clientX, top: (event as DragEvent).clientY })
+            const pos = coords?.pos ?? view.state.selection.from
+            const node = schema.nodes.image.create({ src, alt: file.name })
+            const tr = view.state.tr.insert(pos, node)
+            view.dispatch(tr)
+          }
+          reader.readAsDataURL(file)
+        })
+        return true
+      },
+      handlePaste: (view, event) => {
+        const files = event.clipboardData?.files
+        if (!files || files.length === 0) return false
+        const images = Array.from(files).filter(f => f.type.startsWith('image/'))
+        if (images.length === 0) return false
+        event.preventDefault()
+        images.forEach(file => {
+          const reader = new FileReader()
+          reader.onload = () => {
+            const src = typeof reader.result === 'string' ? reader.result : ''
+            if (!src) return
+            const { schema } = view.state
+            const node = schema.nodes.image.create({ src, alt: file.name })
+            const tr = view.state.tr.replaceSelectionWith(node)
+            view.dispatch(tr)
+          }
+          reader.readAsDataURL(file)
+        })
+        return true
+      },
+    },
   })
 
-  // Load documents and perform migration
+  // Load files + migrate legacy storage
   useEffect(() => {
-    const savedDocs = localStorage.getItem('editor_docs')
-    let docs: DocEntry[] = savedDocs ? JSON.parse(savedDocs) : []
-
-    // Migration from old single-doc format
-    const oldContent = localStorage.getItem('editor_content')
-    const oldTitle = localStorage.getItem('editor_title')
-
-    if (oldContent && docs.length === 0) {
-      const migratedDoc: DocEntry = {
-        id: crypto.randomUUID(),
-        title: oldTitle || 'Documento Recuperado',
-        content: oldContent,
-        lastModified: Date.now()
-      }
-      docs = [migratedDoc]
-      localStorage.setItem('editor_docs', JSON.stringify(docs))
-      // Optional: clear old keys to complete migration
-      // localStorage.removeItem('editor_content')
-      // localStorage.removeItem('editor_title')
-    }
-
-    setDocuments(docs)
+    setFiles(loadFiles())
   }, [])
 
-  // Auto-save logic
+  // Stable refs so saveCurrent doesn't churn
+  const currentFileIdRef = useRef(currentFileId)
+  const documentTitleRef = useRef(documentTitle)
+  const sheetContentRef = useRef<string | null>(null)
+  useEffect(() => { currentFileIdRef.current = currentFileId }, [currentFileId])
+  useEffect(() => { documentTitleRef.current = documentTitle }, [documentTitle])
+
+  const saveCurrent = useCallback(() => {
+    const id = currentFileIdRef.current
+    if (!id) return
+    setFiles(prev => {
+      const target = prev.find(f => f.id === id)
+      if (!target) return prev
+      let content = target.content
+      if (target.kind === 'doc') {
+        if (!editor) return prev
+        content = editor.getHTML()
+      } else if (target.kind === 'sheet') {
+        if (sheetContentRef.current !== null) content = sheetContentRef.current
+      }
+      const title = documentTitleRef.current
+      const newFiles = prev.map(f =>
+        f.id === id ? { ...f, content, title, lastModified: Date.now() } : f
+      )
+      saveFiles(newFiles)
+      return newFiles
+    })
+    setSaved(true)
+    setLastSaved(new Date())
+  }, [editor])
+
+  // Auto-save interval
   useEffect(() => {
-    if (!editor || !currentDocId || view !== 'editor') return
-
-    const interval = setInterval(() => {
-      const html = editor.getHTML()
-      setDocuments(prev => {
-        const newDocs = prev.map(d =>
-          d.id === currentDocId
-            ? { ...d, content: html, title: documentTitle, lastModified: Date.now() }
-            : d
-        )
-        localStorage.setItem('editor_docs', JSON.stringify(newDocs))
-        return newDocs
-      })
-      setSaved(true)
-      setLastSaved(new Date())
-    }, 3000)
-
+    if (!currentFileId || view !== 'editor') return
+    const interval = setInterval(saveCurrent, 3000)
     return () => clearInterval(interval)
-  }, [editor, currentDocId, view, documentTitle])
+  }, [currentFileId, view, saveCurrent])
+
+  // Save on TipTap blur (only relevant for doc kind)
+  useEffect(() => {
+    if (!editor) return
+    const onBlur = () => saveCurrent()
+    editor.on('blur', onBlur)
+    return () => { editor.off('blur', onBlur) }
+  }, [editor, saveCurrent])
+
+  // Save before unload
+  useEffect(() => {
+    const onBeforeUnload = () => saveCurrent()
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [saveCurrent])
 
   // Sync title with document metadata and browser tab
   useEffect(() => {
     if (view === 'editor') {
-       document.title = `${documentTitle} — DocFlex`
+      document.title = `${documentTitle} — Flimas`
     } else {
-       document.title = 'DocFlex — Meus Documentos'
+      document.title = 'Flimas — Meus Arquivos'
     }
   }, [documentTitle, view])
 
-  // Theme application
+  // Theme
   useEffect(() => {
     if (darkMode) {
       document.documentElement.setAttribute('data-theme', 'dark')
@@ -281,99 +282,180 @@ export default function App() {
     }
   }, [darkMode])
 
-  const handleCreate = useCallback(() => {
-    const newDoc: DocEntry = {
-      id: crypto.randomUUID(),
-      title: 'Documento sem título',
-      content: '',
-      lastModified: Date.now()
-    }
-    const newDocs = [newDoc, ...documents]
-    setDocuments(newDocs)
-    localStorage.setItem('editor_docs', JSON.stringify(newDocs))
-    handleOpen(newDoc.id)
-  }, [documents])
-
   const handleOpen = useCallback((id: string) => {
-    const doc = documents.find(d => d.id === id)
-    if (doc && editor) {
-      setCurrentDocId(id)
-      setDocumentTitle(doc.title)
-      editor.commands.setContent(doc.content)
+    const file = files.find(f => f.id === id)
+    if (!file) return
+    // Persist the file currently open before switching
+    if (currentFileIdRef.current && currentFileIdRef.current !== id) {
+      saveCurrent()
+    }
+    sheetContentRef.current = null
+    setCurrentFileId(id)
+    setDocumentTitle(file.title)
+    setReadOnly(false)
+    if (file.kind === 'doc' && editor) {
+      editor.commands.setContent(file.content || '')
+    }
+    setView('editor')
+    setSaved(true)
+    setLastSaved(null)
+  }, [files, editor, saveCurrent])
+
+  const handleCreateFromTemplate = useCallback((kind: FileKind, title: string, content: string) => {
+    const created = newFile(kind, title, content)
+    setFiles(prev => {
+      const next = [created, ...prev]
+      saveFiles(next)
+      return next
+    })
+    queueMicrotask(() => {
+      sheetContentRef.current = null
+      setCurrentFileId(created.id)
+      setDocumentTitle(created.title)
+      if (kind === 'doc' && editor) {
+        editor.commands.setContent(created.content || '')
+      }
       setView('editor')
       setSaved(true)
       setLastSaved(null)
-    }
-  }, [documents, editor])
+    })
+  }, [editor])
+
+  const handleCreate = useCallback((kind: FileKind = 'doc') => {
+    setTemplatePicker(kind)
+  }, [])
 
   const handleDelete = useCallback((id: string) => {
-    if (confirm('Tem certeza que deseja excluir este documento? Esta ação não pode ser desfeita.')) {
-      const newDocs = documents.filter(d => d.id !== id)
-      setDocuments(newDocs)
-      localStorage.setItem('editor_docs', JSON.stringify(newDocs))
-    }
-  }, [documents])
+    if (!confirm('Tem certeza que deseja excluir este arquivo? Esta ação não pode ser desfeita.')) return
+    setFiles(prev => {
+      const next = prev.filter(f => f.id !== id)
+      saveFiles(next)
+      return next
+    })
+  }, [])
 
   const handleImport = useCallback(async (file: File) => {
-    const text = await file.text()
-    let content = text
+    try {
+      const lower = file.name.toLowerCase()
+      const baseTitle = file.name.split('.').slice(0, -1).join('.') || file.name
 
-    // Simple check to see if it's HTML or plain text
-    if (!file.name.endsWith('.html') && !file.name.endsWith('.md')) {
-      content = `<p>${text.replace(/\n/g, '</p><p>')}</p>`
-    }
+      let created: FileEntry
 
-    const newDoc: DocEntry = {
-      id: crypto.randomUUID(),
-      title: file.name.split('.').slice(0, -1).join('.') || 'Documento Importado',
-      content: content,
-      lastModified: Date.now()
+      if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+        const buf = await file.arrayBuffer()
+        const { xlsxBufferToUniver } = await import('./utils/sheetIo')
+        const wb = xlsxBufferToUniver(buf, baseTitle)
+        created = newFile('sheet', baseTitle || 'Planilha Importada', JSON.stringify(wb))
+      } else if (lower.endsWith('.csv')) {
+        const text = await file.text()
+        const { csvTextToUniver } = await import('./utils/sheetIo')
+        const wb = csvTextToUniver(text, baseTitle)
+        created = newFile('sheet', baseTitle || 'Planilha Importada', JSON.stringify(wb))
+      } else {
+        const text = await file.text()
+        let content: string
+        if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
+          content = sanitizeHtml(markdownToHtml(text))
+        } else if (lower.endsWith('.html') || lower.endsWith('.htm')) {
+          content = sanitizeHtml(text)
+        } else {
+          const escaped = text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+          content = `<p>${escaped.replace(/\n/g, '</p><p>')}</p>`
+        }
+        created = newFile('doc', baseTitle || 'Documento Importado', content)
+      }
+
+      setFiles(prev => {
+        const next = [created, ...prev]
+        saveFiles(next)
+        return next
+      })
+      queueMicrotask(() => handleOpen(created.id))
+    } catch (err) {
+      console.error('Falha ao importar arquivo', err)
+      alert(`Não foi possível importar "${file.name}". O arquivo pode estar corrompido ou em um formato não suportado.`)
     }
-    const newDocs = [newDoc, ...documents]
-    setDocuments(newDocs)
-    localStorage.setItem('editor_docs', JSON.stringify(newDocs))
-    handleOpen(newDoc.id)
-  }, [documents, handleOpen])
+  }, [handleOpen])
 
   const handleBackToDashboard = useCallback(() => {
-    if (!saved && editor) {
-        // Force save before leaving
-        const html = editor.getHTML()
-        const newDocs = documents.map(d =>
-          d.id === currentDocId ? { ...d, content: html, title: documentTitle, lastModified: Date.now() } : d
-        )
-        setDocuments(newDocs)
-        localStorage.setItem('editor_docs', JSON.stringify(newDocs))
-    }
+    saveCurrent()
     setView('dashboard')
-    setCurrentDocId(null)
-  }, [saved, editor, currentDocId, documents, documentTitle])
+    setCurrentFileId(null)
+  }, [saveCurrent])
 
-  // Keyboard shortcuts
+  const handleRestoreVersion = useCallback((snap: Snapshot) => {
+    const id = currentFileIdRef.current
+    if (!id) return
+    setFiles(prev => {
+      const next = prev.map(f =>
+        f.id === id ? { ...f, title: snap.title, content: snap.content, lastModified: Date.now() } : f
+      )
+      saveFiles(next)
+      return next
+    })
+    setDocumentTitle(snap.title)
+    if (snap.kind === 'doc' && editor) {
+      editor.commands.setContent(snap.content || '')
+    } else if (snap.kind === 'sheet') {
+      sheetContentRef.current = snap.content
+      // Force remount by briefly clearing + resetting currentFileId
+      setCurrentFileId(null)
+      queueMicrotask(() => setCurrentFileId(id))
+    }
+    setShowHistory(false)
+    setSaved(true)
+    setLastSaved(new Date())
+  }, [editor])
+
+  // Stable refs for shortcuts
+  const handleCreateRef = useRef(handleCreate)
+  const saveCurrentRef = useRef(saveCurrent)
+  useEffect(() => { handleCreateRef.current = handleCreate }, [handleCreate])
+  useEffect(() => { saveCurrentRef.current = saveCurrent }, [saveCurrent])
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey)) {
-        if (e.key === 'h' || e.key === 'H') { e.preventDefault(); setShowFind(v => !v) }
-        if (e.key === 'p' || e.key === 'P') { e.preventDefault(); window.print() }
-        if (e.key === 'n' || e.key === 'N') { e.preventDefault(); handleCreate() }
-        if (e.key === 's' || e.key === 'S') {
-          e.preventDefault()
-          if (editor && currentDocId) {
-            const html = editor.getHTML()
-            const newDocs = documents.map(d =>
-              d.id === currentDocId ? { ...d, content: html, title: documentTitle, lastModified: Date.now() } : d
-            )
-            setDocuments(newDocs)
-            localStorage.setItem('editor_docs', JSON.stringify(newDocs))
-            setSaved(true)
-            setLastSaved(new Date())
-          }
-        }
-      }
+      if (e.key === 'F11') { e.preventDefault(); setFocusMode(v => !v); return }
+      if (!(e.ctrlKey || e.metaKey)) return
+      const key = e.key.toLowerCase()
+      if (key === 'h') { e.preventDefault(); setShowFind(v => !v) }
+      else if (key === 'p') { e.preventDefault(); window.print() }
+      else if (key === 'n') { e.preventDefault(); handleCreateRef.current('doc') }
+      else if (key === 's') { e.preventDefault(); saveCurrentRef.current() }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [editor, handleCreate, documents, currentDocId, documentTitle])
+  }, [])
+
+  useEffect(() => {
+    if (focusMode) document.body.classList.add('focus-mode')
+    else document.body.classList.remove('focus-mode')
+  }, [focusMode])
+
+  useEffect(() => {
+    editor?.setEditable(!readOnly)
+  }, [editor, readOnly])
+
+  useEffect(() => {
+    if (!currentFileId || view !== 'editor' || readOnly) return
+    const interval = setInterval(() => {
+      const file = files.find(f => f.id === currentFileId)
+      if (!file) return
+      const content = file.kind === 'doc' && editor
+        ? editor.getHTML()
+        : (sheetContentRef.current ?? file.content)
+      pushSnapshot(currentFileId, {
+        timestamp: Date.now(),
+        title: documentTitle,
+        content,
+        kind: file.kind,
+      })
+    }, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [currentFileId, view, readOnly, files, editor, documentTitle])
 
   const handleExportHTML = useCallback(() => {
     if (!editor) return
@@ -412,54 +494,119 @@ ${editor.getHTML()}
     downloadFile(htmlToMarkdown(editor.getHTML()), `${documentTitle}.md`, 'text/markdown')
   }, [editor, documentTitle])
 
+  const handleExportPDF = useCallback(async () => {
+    if (!editor) return
+    const html2pdf = (await import('html2pdf.js')).default
+    const container = document.createElement('div')
+    container.innerHTML = `
+      <div style="font-family: 'Merriweather', Georgia, serif; max-width: 720px; margin: 0 auto; padding: 32px 40px; line-height: 1.7; color: #1e293b;">
+        <style>
+          h1,h2,h3,h4 { color: #0f172a; margin-top: 1.4em; page-break-after: avoid; }
+          blockquote { border-left: 4px solid #6366f1; padding: 0.75rem 1.25rem; background: #eff6ff; color: #475569; font-style: italic; border-radius: 0 8px 8px 0; }
+          pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 10px; overflow-x: auto; font-family: monospace; font-size: 0.85em; }
+          code { background: #f1f5f9; color: #6366f1; padding: 0.15em 0.35em; border-radius: 4px; }
+          table { border-collapse: collapse; width: 100%; margin: 1.25em 0; }
+          th, td { border: 1px solid #e2e8f0; padding: 0.5rem; text-align: left; }
+          th { background: #f8fafc; font-weight: bold; }
+          img { max-width: 100%; border-radius: 8px; page-break-inside: avoid; }
+          p, li { page-break-inside: avoid; }
+        </style>
+        ${editor.getHTML()}
+      </div>`
+    await (html2pdf() as unknown as { set: (o: Record<string, unknown>) => { from: (el: HTMLElement) => { save: () => Promise<void> } } })
+      .set({
+        margin: [10, 10, 10, 10],
+        filename: `${documentTitle}.pdf`,
+        image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+      })
+      .from(container)
+      .save()
+  }, [editor, documentTitle])
+
+  const getCurrentSheetRaw = useCallback(() => {
+    if (!currentFile || currentFile.kind !== 'sheet') return null
+    return sheetContentRef.current ?? currentFile.content
+  }, [currentFile])
+
+  const handleExportXLSX = useCallback(async () => {
+    const raw = getCurrentSheetRaw()
+    if (raw === null) return
+    const { parseWorkbookJson, universToXlsxBlob } = await import('./utils/sheetIo')
+    downloadBlob(universToXlsxBlob(parseWorkbookJson(raw)), `${documentTitle}.xlsx`)
+  }, [getCurrentSheetRaw, documentTitle])
+
+  const handleExportCSV = useCallback(async () => {
+    const raw = getCurrentSheetRaw()
+    if (raw === null) return
+    const { parseWorkbookJson, universToCsvBlob } = await import('./utils/sheetIo')
+    downloadBlob(universToCsvBlob(parseWorkbookJson(raw)), `${documentTitle}.csv`)
+  }, [getCurrentSheetRaw, documentTitle])
+
   const wordCount = editor?.storage.characterCount?.words() ?? 0
   const charCount = editor?.storage.characterCount?.characters() ?? 0
 
   const formatTime = (d: Date) =>
     d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
+  const templateNode = templatePicker && (
+    <TemplatePicker
+      kind={templatePicker}
+      onPick={(name, content) => {
+        const pickedKind = templatePicker
+        setTemplatePicker(null)
+        handleCreateFromTemplate(pickedKind, name, content)
+      }}
+      onClose={() => setTemplatePicker(null)}
+    />
+  )
+
   if (view === 'dashboard') {
     return (
-      <Dashboard
-        documents={documents}
-        onCreate={handleCreate}
-        onOpen={handleOpen}
-        onDelete={handleDelete}
-        onImport={handleImport}
-        darkMode={darkMode}
-        onToggleTheme={() => setDarkMode(!darkMode)}
-      />
+      <ErrorBoundary>
+        <Dashboard
+          files={files}
+          onCreate={handleCreate}
+          onOpen={handleOpen}
+          onDelete={handleDelete}
+          onImport={handleImport}
+          darkMode={darkMode}
+          onToggleTheme={() => setDarkMode(!darkMode)}
+        />
+        {templateNode}
+      </ErrorBoundary>
     )
   }
 
+  const isSheet = currentFile?.kind === 'sheet'
+
   return (
-    <div className={`min-h-screen flex flex-col transition-colors duration-500`}>
+    <ErrorBoundary onReset={() => { setView('dashboard'); setCurrentFileId(null) }}>
+    <div className={`min-h-screen flex flex-col transition-colors duration-500 ${focusMode ? 'focus-mode-root' : ''}`}>
 
       {/* ── App Header ──────────────────────────────── */}
       <header className="glass-panel sticky top-0 z-[60] flex items-center gap-4 px-6 py-3 border-b border-white select-none shadow-sm">
-        {/* Back Button */}
         <button
           onClick={handleBackToDashboard}
           className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center transition-all group"
-          title="Voltar para Meus Documentos"
+          title="Voltar para Meus Arquivos"
+          aria-label="Voltar para Meus Arquivos"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:-translate-x-1 transition-transform"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
         </button>
 
-        {/* Logo (Desktop only) */}
         <div className="hidden md:flex items-center gap-3 cursor-default">
-          <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-             <span className="text-xl text-white">📝</span>
-          </div>
+          <img src={isSheet ? logoSheet : logoDoc} alt={isSheet ? 'Flimas Sheets' : 'Flimas Docs'} className="w-10 h-10" />
           <div className="flex flex-col">
-            <span className="font-extrabold text-lg tracking-tight leading-none bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>DocFlex</span>
-            <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-0.5">Workspace</span>
+            <span className="font-extrabold text-lg tracking-tight leading-none bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>{isSheet ? 'Flimas Sheets' : 'Flimas Docs'}</span>
+            <span className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isSheet ? 'text-emerald-600' : 'text-indigo-500'}`}>{isSheet ? 'Planilha' : 'Documento'}</span>
           </div>
         </div>
 
         <div className="hidden md:block w-px h-8 bg-slate-200 dark:bg-slate-700/50 mx-2" />
 
-        {/* Document title */}
         <div className="flex-1 max-w-md relative group">
           {editingTitle ? (
             <input
@@ -482,14 +629,16 @@ ${editor.getHTML()}
           )}
         </div>
 
-        {/* Action area */}
         <div className="flex items-center gap-4">
-           {/* Save status */}
-           <div className="hidden md:flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+           <div
+             className="hidden md:flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+             role="status"
+             aria-live="polite"
+           >
              {saved ? (
                <>
                  <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-                 <span className="text-slate-500 dark:text-slate-400">{lastSaved ? `Salvo às ${formatTime(lastSaved)}` : 'Documento Salvo'}</span>
+                 <span className="text-slate-500 dark:text-slate-400">{lastSaved ? `Salvo às ${formatTime(lastSaved)}` : 'Arquivo Salvo'}</span>
                </>
              ) : (
                <>
@@ -499,30 +648,79 @@ ${editor.getHTML()}
              )}
            </div>
 
-           {/* Save button mockup (the editor auto-saves, but a button feels "Pro") */}
+           {isSheet && (
+             <div className="hidden md:flex items-center gap-1.5">
+               <button
+                 onClick={handleExportXLSX}
+                 className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+                 title="Exportar como .xlsx"
+               >
+                 .xlsx
+               </button>
+               <button
+                 onClick={handleExportCSV}
+                 className="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-colors"
+                 title="Exportar como .csv"
+               >
+                 .csv
+               </button>
+             </div>
+           )}
+
            <button
-              onClick={() => {
-                if (editor && currentDocId) {
-                  const html = editor.getHTML()
-                  const newDocs = documents.map(d => d.id === currentDocId ? { ...d, content: html, title: documentTitle, lastModified: Date.now() } : d)
-                  setDocuments(newDocs)
-                  localStorage.setItem('editor_docs', JSON.stringify(newDocs))
-                  setSaved(true)
-                  setLastSaved(new Date())
-                }
-              }}
-              className="hidden sm:flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+             onClick={() => setReadOnly(v => !v)}
+             className={`flex w-9 h-9 rounded-lg items-center justify-center transition-colors ${readOnly ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600'}`}
+             title={readOnly ? 'Editar arquivo' : 'Modo somente leitura'}
+             aria-label={readOnly ? 'Sair do modo somente leitura' : 'Ativar somente leitura'}
+             aria-pressed={readOnly}
+           >
+             {readOnly ? '🔒' : '🔓'}
+           </button>
+
+           <button
+             onClick={() => setShowHistory(true)}
+             className="flex w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600 items-center justify-center transition-colors"
+             title="Histórico de versões"
+             aria-label="Abrir histórico de versões"
+           >
+             🕓
+           </button>
+
+           {!isSheet && (
+             <button
+               onClick={handleExportPDF}
+               className="hidden md:flex px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white transition-colors"
+               title="Exportar como PDF"
+               aria-label="Exportar como PDF"
+             >
+               .pdf
+             </button>
+           )}
+
+           <button
+             onClick={() => window.print()}
+             className="hidden md:flex w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600 items-center justify-center transition-colors"
+             title="Imprimir (Ctrl+P)"
+             aria-label="Imprimir"
+           >
+             🖨️
+           </button>
+
+           <button
+              onClick={saveCurrent}
+              className="flex items-center gap-2 px-3 sm:px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+              aria-label="Salvar arquivo"
            >
              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-             Salvar
+             <span className="hidden sm:inline">Salvar</span>
            </button>
 
            <div className="w-px h-6 bg-slate-200 dark:bg-slate-700/50" />
 
-           {/* Theme toggle */}
            <button
               onClick={() => setDarkMode(!darkMode)}
               className="w-10 h-10 rounded-xl bg-[var(--bg-ui)] hover:bg-[var(--bg-ui-hover)] flex items-center justify-center transition-all group overflow-hidden relative border border-slate-200 dark:border-slate-700"
+              aria-label="Alternar tema"
            >
               <div className={`transition-transform duration-500 ${darkMode ? 'translate-y-12' : 'translate-y-0'}`}>🌙</div>
               <div className={`absolute transition-transform duration-500 ${darkMode ? 'translate-y-0' : '-translate-y-12'}`}>☀️</div>
@@ -530,69 +728,85 @@ ${editor.getHTML()}
         </div>
       </header>
 
-      {/* ── Toolbar Area ────────────────────────────── */}
-      <MenuBar
-        editor={editor}
-        wordCount={wordCount}
-        charCount={charCount}
-        onToggleFind={() => setShowFind(v => !v)}
-        onExportHTML={handleExportHTML}
-        onExportTXT={handleExportTXT}
-        onExportMD={handleExportMD}
-        onPrint={() => window.print()}
-        onNew={handleCreate}
-        zoom={zoom}
-        onZoomChange={setZoom}
-      />
+      {isSheet && currentFile ? (
+        <Suspense fallback={
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <img src={logoSheet} alt="" className="w-16 h-16 mb-3 mx-auto animate-pulse" />
+              <p className="text-slate-500 dark:text-slate-400 font-semibold">Carregando planilha…</p>
+            </div>
+          </div>
+        }>
+          <SheetEditor
+            fileId={currentFile.id}
+            initialContent={currentFile.content}
+            darkMode={darkMode}
+            onChange={(json) => {
+              sheetContentRef.current = json
+              setSaved(false)
+            }}
+          />
+        </Suspense>
+      ) : (
+        <>
+          <MenuBar
+            editor={editor}
+            onToggleFind={() => setShowFind(v => !v)}
+            onExportHTML={handleExportHTML}
+            onExportTXT={handleExportTXT}
+            onExportMD={handleExportMD}
+            onExportPDF={handleExportPDF}
+            onPrint={() => window.print()}
+            onNew={() => handleCreate('doc')}
+            zoom={zoom}
+            onZoomChange={setZoom}
+          />
 
-      {showFind && (
-        <div className="glass-panel p-1 border-b border-white z-40">
-           <FindReplace editor={editor} onClose={() => setShowFind(false)} />
-        </div>
+          {showFind && (
+            <div className="glass-panel p-1 border-b border-white z-40">
+               <FindReplace editor={editor} onClose={() => setShowFind(false)} />
+            </div>
+          )}
+
+          <main className="flex-1 overflow-auto py-12 px-6 bg-[var(--bg-app)] transition-colors duration-500">
+            <div
+              className="editor-page hover:shadow-2xl"
+              style={{
+                transform: `scale(${zoom / 100})`,
+                transformOrigin: 'top center',
+                marginBottom: zoom < 100 ? `${-(1056 * (1 - zoom / 100))}px` : '4rem',
+              }}
+            >
+              <EditorContent editor={editor} className="min-h-full" />
+            </div>
+          </main>
+
+          <footer className="glass-panel border-t border-white px-6 py-2 flex items-center gap-6 text-[11px] font-bold text-slate-500 uppercase tracking-wider select-none">
+            <div className="flex items-center gap-1.5">
+               <span className="w-2 h-2 rounded-full bg-indigo-500" />
+               <span>{wordCount} palavras</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+               <span className="w-2 h-2 rounded-full bg-purple-500" />
+               <span>{charCount} caracteres</span>
+            </div>
+
+            <div className="flex-1" />
+
+            <div className="flex items-center gap-4">
+               <div className="flex items-center gap-1.5 px-3 py-1 bg-[var(--bg-ui)] rounded-lg">
+                  <span className="text-indigo-500">Ctrl + S</span>
+                  <span className="opacity-50">para salvar</span>
+               </div>
+               <div className="flex items-center gap-1.5 px-3 py-1 bg-[var(--bg-ui)] rounded-lg">
+                  <span className="text-indigo-500">Ctrl + H</span>
+                  <span className="opacity-50">localizar</span>
+               </div>
+            </div>
+          </footer>
+        </>
       )}
 
-      {/* ── Editor Canvas ──────────────────────────── */}
-      <main
-        className="flex-1 overflow-auto py-12 px-6 bg-[var(--bg-app)] transition-colors duration-500"
-      >
-        <div
-          className="editor-page hover:shadow-2xl"
-          style={{
-            transform: `scale(${zoom / 100})`,
-            transformOrigin: 'top center',
-            marginBottom: zoom < 100 ? `${-(1056 * (1 - zoom / 100))}px` : '4rem',
-          }}
-        >
-          <EditorContent editor={editor} className="min-h-full" />
-        </div>
-      </main>
-
-      {/* ── Status Bar ──────────────────────────────── */}
-      <footer className="glass-panel border-t border-white px-6 py-2 flex items-center gap-6 text-[11px] font-bold text-slate-500 uppercase tracking-wider select-none">
-        <div className="flex items-center gap-1.5">
-           <span className="w-2 h-2 rounded-full bg-indigo-500" />
-           <span>{wordCount} palavras</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-           <span className="w-2 h-2 rounded-full bg-purple-500" />
-           <span>{charCount} caracteres</span>
-        </div>
-
-        <div className="flex-1" />
-
-        <div className="flex items-center gap-4">
-           <div className="flex items-center gap-1.5 px-3 py-1 bg-[var(--bg-ui)] rounded-lg">
-              <span className="text-indigo-500">Ctrl + S</span>
-              <span className="opacity-50">para salvar</span>
-           </div>
-           <div className="flex items-center gap-1.5 px-3 py-1 bg-[var(--bg-ui)] rounded-lg">
-              <span className="text-indigo-500">Ctrl + H</span>
-              <span className="opacity-50">localizar</span>
-           </div>
-        </div>
-      </footer>
-
-      {/* ── Print styles ─────────────────────────────── */}
       <style>{`
         @media print {
           header, .glass-panel:not(.editor-page), footer, .menubar-wrap { display: none !important; }
@@ -600,7 +814,31 @@ ${editor.getHTML()}
           main { background: white !important; padding: 0 !important; }
           body { background: white !important; }
         }
+        body.focus-mode header, body.focus-mode footer, body.focus-mode .menubar-wrap { opacity: 0; pointer-events: none; transition: opacity 0.2s ease; }
+        body.focus-mode header:hover, body.focus-mode footer:hover { opacity: 1; pointer-events: auto; }
       `}</style>
+
+      {focusMode && (
+        <button
+          onClick={() => setFocusMode(false)}
+          className="fixed bottom-6 right-6 z-[70] px-3 py-2 text-xs font-bold bg-slate-800 text-white rounded-full shadow-xl opacity-40 hover:opacity-100 transition-opacity"
+          aria-label="Sair do modo foco"
+          title="Sair do modo foco (F11)"
+        >
+          Sair do foco (F11)
+        </button>
+      )}
+
+      {templateNode}
+
+      {showHistory && currentFile && (
+        <VersionHistory
+          fileId={currentFile.id}
+          onRestore={handleRestoreVersion}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
     </div>
+    </ErrorBoundary>
   )
 }
