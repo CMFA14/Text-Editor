@@ -4,6 +4,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:ital,wght@0,400;0,700;1,400;1,700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
+  color-scheme: light;
   --primary: #7c3aed;
   --primary-hover: #6d28d9;
   --primary-light: #f3e8ff;
@@ -23,6 +24,7 @@
 }
 
 [data-theme='dark'], .dark {
+  color-scheme: dark;
   --primary: #a78bfa;
   --primary-hover: #8b5cf6;
   --primary-light: rgba(167, 139, 250, 0.15);
@@ -38,6 +40,28 @@
   --border-light: #2d2548;
   --glass-bg: rgba(15, 11, 28, 0.92);
   --glass-border: rgba(167, 139, 250, 0.15);
+}
+
+/* Controles nativos (select/option/input) herdam a esquema do container
+   — força legibilidade no tema claro mesmo com OS em dark */
+:root select,
+:root select option,
+:root input[type="text"],
+:root input[type="number"],
+:root input[type="search"],
+:root input[type="color"],
+:root textarea {
+  color-scheme: light;
+}
+
+.dark select,
+.dark select option,
+.dark input[type="text"],
+.dark input[type="number"],
+.dark input[type="search"],
+.dark input[type="color"],
+.dark textarea {
+  color-scheme: dark;
 }
 
 body {
@@ -459,4 +483,19 @@ body {
 
 [data-theme='dark'] .delete-btn:hover {
   background: rgba(239, 68, 68, 0.2);
+}
+
+/* ─── Density ────────────────────────────────────── */
+body.density-compact .doc-card { padding: 0.75rem 1rem; gap: 0.75rem; }
+body.density-compact .action-card { padding: 1rem; }
+body.density-compact .dashboard-grid { gap: 0.75rem; }
+
+/* ─── Reduced motion ─────────────────────────────── */
+body.reduced-motion *,
+body.reduced-motion *::before,
+body.reduced-motion *::after {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
 }

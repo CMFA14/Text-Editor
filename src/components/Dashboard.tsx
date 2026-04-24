@@ -1,10 +1,12 @@
-import React, { useRef, useState, useMemo } from 'react'
+import React, { useRef, useState, useMemo, useEffect } from 'react'
 import type { FileEntry, FileKind } from '../types'
+import flimasLogo from '../assets/flimas-logo.svg'
 import logoDoc from '../assets/logo-doc.svg'
 import logoSheet from '../assets/logo-sheet.svg'
 import logoCode from '../assets/logo-flimasCode.png'
 import logoStudio from '../assets/logo-flimasStudio.png'
-import { Image as ImageIcon } from 'lucide-react'
+import { Image as ImageIcon, MoreHorizontal, Download, Trash2, Settings as SettingsIcon, Home } from 'lucide-react'
+import { getDownloadOptions } from '../utils/download'
 
 interface DashboardProps {
   files: FileEntry[]
@@ -14,6 +16,8 @@ interface DashboardProps {
   onImport: (file: File) => void
   darkMode: boolean
   onToggleTheme: () => void
+  onGoHome?: () => void
+  onOpenSettings?: () => void
 }
 
 type FilterKind = 'all' | 'doc' | 'sheet' | 'code' | 'image'
@@ -64,12 +68,22 @@ function SideNav({
 }
 
 export default function Dashboard({
-  files, onOpen, onCreate, onDelete, onImport, darkMode, onToggleTheme
+  files, onOpen, onCreate, onDelete, onImport, darkMode, onToggleTheme,
+  onGoHome, onOpenSettings,
 }: DashboardProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [filter, setFilter] = useState<FilterKind>('all')
   const [showCreateMenu, setShowCreateMenu] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+
+  // Close per-card menu on Escape or outside-click handled by overlay
+  useEffect(() => {
+    if (!menuOpenId) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpenId(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menuOpenId])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -135,13 +149,15 @@ export default function Dashboard({
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         {/* Brand */}
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-[var(--border-light)]">
-          <img src={logoDoc} alt="" className="w-9 h-9" />
-          <div className="flex flex-col leading-tight">
-            <span className="font-extrabold text-lg bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>Flimas</span>
-            <span className="text-[10px] font-bold text-[var(--primary)] uppercase tracking-widest">Workspace</span>
-          </div>
-        </div>
+        <button
+          onClick={onGoHome}
+          className="flex items-center gap-3 px-5 py-5 border-b border-[var(--border-light)] w-full text-left hover:bg-[var(--bg-ui-hover)] transition-colors"
+          title="Ir para a tela inicial"
+          aria-label="Ir para a tela inicial"
+        >
+          <img src={flimasLogo} alt="Flimas" className="h-8 w-auto" />
+          <span className="text-[10px] font-bold text-[var(--primary)] uppercase tracking-[0.3em] ml-auto">workspace</span>
+        </button>
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
@@ -185,6 +201,15 @@ export default function Dashboard({
 
         {/* Footer */}
         <div className="px-3 py-4 border-t border-[var(--border-light)] space-y-1">
+          {onGoHome && (
+            <button
+              onClick={onGoHome}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-[var(--bg-ui-hover)] transition-all"
+            >
+              <span className="w-6 h-6 flex items-center justify-center"><Home size={16} /></span>
+              <span className="flex-1 text-left">Início</span>
+            </button>
+          )}
           <button
             onClick={onToggleTheme}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-[var(--bg-ui-hover)] transition-all"
@@ -192,6 +217,15 @@ export default function Dashboard({
             <span className="w-6 h-6 flex items-center justify-center">{darkMode ? '☀️' : '🌙'}</span>
             <span className="flex-1 text-left">{darkMode ? 'Tema claro' : 'Tema escuro'}</span>
           </button>
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-[var(--bg-ui-hover)] transition-all"
+            >
+              <span className="w-6 h-6 flex items-center justify-center"><SettingsIcon size={16} /></span>
+              <span className="flex-1 text-left">Configurações</span>
+            </button>
+          )}
         </div>
       </aside>
 
@@ -207,8 +241,18 @@ export default function Dashboard({
           >
             <Icons.Menu />
           </button>
-          <img src={logoDoc} alt="" className="w-8 h-8" />
-          <span className="font-extrabold text-lg bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>Flimas</span>
+          <img src={flimasLogo} alt="Flimas" className="h-7 w-auto" />
+          <span className="text-[9px] font-bold text-[var(--primary)] uppercase tracking-[0.25em]">workspace</span>
+          <div className="flex-1" />
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              className="w-10 h-10 rounded-lg hover:bg-[var(--bg-ui-hover)] flex items-center justify-center text-slate-600 dark:text-slate-300"
+              aria-label="Configurações"
+            >
+              <SettingsIcon size={16} />
+            </button>
+          )}
         </header>
 
         <main className="flex-1 px-6 md:px-10 py-8">
@@ -352,8 +396,10 @@ export default function Dashboard({
                 file.kind === 'code'  ? 'Código'   :
                 file.kind === 'image' ? 'Imagem'   :
                 'Documento'
+              const downloadOptions = getDownloadOptions(file)
+              const isMenuOpen = menuOpenId === file.id
               return (
-              <div key={file.id} className="doc-card" onClick={() => onOpen(file.id)}>
+              <div key={file.id} className="doc-card relative" onClick={() => onOpen(file.id)}>
                 <img src={fileLogo} alt="" className="w-12 h-12 rounded-xl shadow-sm" />
                 <div className="flex-1 min-w-0">
                   <h3 className="doc-card-title truncate" title={file.title}>
@@ -363,17 +409,69 @@ export default function Dashboard({
                     {fileKindLabel} · {formatDate(file.lastModified)}
                   </p>
                 </div>
-                <button
-                  className="delete-btn"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onDelete(file.id)
-                  }}
-                  title="Excluir arquivo"
-                  aria-label="Excluir arquivo"
-                >
-                  <Icons.Trash />
-                </button>
+
+                <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                  <button
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-[var(--primary)] hover:bg-[var(--primary-light)] transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setMenuOpenId(isMenuOpen ? null : file.id)
+                    }}
+                    title="Mais opções"
+                    aria-label="Mais opções"
+                    aria-haspopup="menu"
+                    aria-expanded={isMenuOpen}
+                  >
+                    <MoreHorizontal size={16} />
+                  </button>
+                </div>
+
+                {isMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-30"
+                      onClick={(e) => { e.stopPropagation(); setMenuOpenId(null) }}
+                    />
+                    <div
+                      className="absolute right-3 top-12 z-40 w-60 bg-[var(--bg-page)] rounded-xl shadow-xl border border-[var(--border-light)] overflow-hidden"
+                      role="menu"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
+                        <Download size={10} /> Baixar como
+                      </div>
+                      {downloadOptions.map(opt => (
+                        <button
+                          key={opt.id}
+                          onClick={async () => {
+                            setMenuOpenId(null)
+                            try { await opt.run() } catch (err) { console.error(err) }
+                          }}
+                          className="w-full px-4 py-2.5 flex items-center justify-between gap-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[var(--primary-light)] dark:hover:bg-slate-700 transition-colors"
+                          role="menuitem"
+                        >
+                          <div className="flex flex-col leading-tight min-w-0">
+                            <span className="truncate">{opt.label}</span>
+                            {opt.hint && <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate">{opt.hint}</span>}
+                          </div>
+                          <Download size={14} className="text-slate-400 shrink-0" />
+                        </button>
+                      ))}
+                      <div className="border-t border-[var(--border-light)]" />
+                      <button
+                        onClick={() => {
+                          setMenuOpenId(null)
+                          onDelete(file.id)
+                        }}
+                        className="w-full px-4 py-2.5 flex items-center gap-3 text-left text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                        role="menuitem"
+                      >
+                        <Trash2 size={14} />
+                        Excluir arquivo
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
               )
             })}

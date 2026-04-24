@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <defs>
+    <linearGradient id="flimasMarkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="50%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#4c1d95"/>
+    </linearGradient>
+    <linearGradient id="flimasArrowGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#4c1d95"/>
+    </linearGradient>
+  </defs>
+  <!-- F estilizado com cauda curva -->
+  <path
+    d="M 30 20
+       C 45 18, 78 18, 92 22
+       L 92 36
+       C 80 34, 60 34, 48 36
+       L 48 54
+       C 58 54, 70 54, 78 55
+       L 78 68
+       C 68 67, 58 67, 48 68
+       L 48 86
+       C 48 96, 40 102, 28 100
+       C 22 99, 18 95, 18 90
+       C 24 92, 32 92, 32 82
+       Z"
+    fill="url(#flimasMarkGrad)"
+  />
+  <!-- Seta cruzando o F -->
+  <path
+    d="M 38 78
+       L 95 30
+       M 95 30
+       L 80 28
+       M 95 30
+       L 92 46"
+    stroke="url(#flimasArrowGrad)"
+    stroke-width="10"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+  />
+</svg>

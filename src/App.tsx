@@ -24,6 +24,7 @@ import Superscript from '@tiptap/extension-superscript'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import { FontSize } from './extensions/FontSize'
+import flimasLogo from './assets/flimas-logo.svg'
 import logoDoc from './assets/logo-doc.svg'
 import logoSheet from './assets/logo-sheet.svg'
 import logoCode from './assets/logo-flimasCode.png'
@@ -34,7 +35,42 @@ import Dashboard from './components/Dashboard'
 import ErrorBoundary from './components/ErrorBoundary'
 import TemplatePicker from './components/TemplatePicker'
 import VersionHistory from './components/VersionHistory'
+import HomeLanding from './components/HomeLanding'
+import SettingsModal, { type ThemePreference, type DensityPreference } from './components/SettingsModal'
 import { pushSnapshot, type Snapshot } from './history'
+
+const SETTINGS_KEY = 'flimas_settings_v1'
+
+interface PersistedSettings {
+  themePref: ThemePreference
+  density: DensityPreference
+  reducedMotion: boolean
+}
+
+function loadSettings(): PersistedSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY)
+    if (!raw) throw new Error('no settings')
+    const parsed = JSON.parse(raw) as Partial<PersistedSettings>
+    return {
+      themePref: parsed.themePref ?? 'system',
+      density: parsed.density ?? 'comfortable',
+      reducedMotion: !!parsed.reducedMotion,
+    }
+  } catch {
+    return { themePref: 'system', density: 'comfortable', reducedMotion: false }
+  }
+}
+
+function saveSettings(s: PersistedSettings) {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)) } catch { /* ignore */ }
+}
+
+function systemPrefersDark(): boolean {
+  return typeof window !== 'undefined'
+    && !!window.matchMedia
+    && window.matchMedia('(prefers-color-scheme: dark)').matches
+}
 
 const SheetEditor = lazy(() => import('./components/SheetEditor'))
 const CodeEditor  = lazy(() => import('./components/CodeEditor'))
@@ -113,7 +149,7 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 export default function App() {
-  const [view, setView] = useState<'dashboard' | 'editor'>('dashboard')
+  const [view, setView] = useState<'home' | 'dashboard' | 'editor'>('home')
   const [files, setFiles] = useState<FileEntry[]>([])
   const [currentFileId, setCurrentFileId] = useState<string | null>(null)
   const [showFind, setShowFind] = useState(false)
@@ -127,6 +163,13 @@ export default function App() {
   const [templatePicker, setTemplatePicker] = useState<FileKind | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [readOnly, setReadOnly] = useState(false)
+
+  // Settings (persisted)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const initialSettings = useMemo(() => loadSettings(), [])
+  const [themePref, setThemePref] = useState<ThemePreference>(initialSettings.themePref)
+  const [density, setDensity] = useState<DensityPreference>(initialSettings.density)
+  const [reducedMotion, setReducedMotion] = useState<boolean>(initialSettings.reducedMotion)
 
   const currentFile = useMemo(
     () => files.find(f => f.id === currentFileId) || null,
@@ -271,12 +314,30 @@ export default function App() {
   useEffect(() => {
     if (view === 'editor') {
       document.title = `${documentTitle} — Flimas`
-    } else {
+    } else if (view === 'dashboard') {
       document.title = 'Flimas — Meus Arquivos'
+    } else {
+      document.title = 'Flimas Workspace'
     }
   }, [documentTitle, view])
 
-  // Theme
+  // Resolve effective dark mode from theme preference + OS
+  useEffect(() => {
+    const compute = () =>
+      themePref === 'dark' ? true
+      : themePref === 'light' ? false
+      : systemPrefersDark()
+
+    setDarkMode(compute())
+
+    if (themePref !== 'system' || typeof window === 'undefined' || !window.matchMedia) return
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = () => setDarkMode(compute())
+    mq.addEventListener?.('change', onChange)
+    return () => mq.removeEventListener?.('change', onChange)
+  }, [themePref])
+
+  // Apply dark class + data-theme
   useEffect(() => {
     if (darkMode) {
       document.documentElement.setAttribute('data-theme', 'dark')
@@ -286,6 +347,47 @@ export default function App() {
       document.documentElement.classList.remove('dark')
     }
   }, [darkMode])
+
+  // Apply density + reduced-motion as body classes, persist settings
+  useEffect(() => {
+    document.body.classList.toggle('density-compact', density === 'compact')
+    document.body.classList.toggle('density-comfortable', density === 'comfortable')
+  }, [density])
+
+  useEffect(() => {
+    document.body.classList.toggle('reduced-motion', reducedMotion)
+  }, [reducedMotion])
+
+  useEffect(() => {
+    saveSettings({ themePref, density, reducedMotion })
+  }, [themePref, density, reducedMotion])
+
+  const handleToggleTheme = useCallback(() => {
+    setThemePref(prev => (prev === 'dark' ? 'light' : prev === 'light' ? 'dark' : (systemPrefersDark() ? 'light' : 'dark')))
+  }, [])
+
+  const handleClearAllData = useCallback(() => {
+    try {
+      // Remove known flimas keys — avoid nuking unrelated localStorage entries.
+      const keysToRemove: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i)
+        if (!k) continue
+        if (
+          k === 'editor_files' ||
+          k === 'editor_docs' ||
+          k === SETTINGS_KEY ||
+          k.startsWith('editor_history_') ||
+          k.startsWith('flimas_')
+        ) keysToRemove.push(k)
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k))
+    } catch { /* ignore */ }
+    setFiles([])
+    setCurrentFileId(null)
+    setView('home')
+    setSettingsOpen(false)
+  }, [])
 
   const handleOpen = useCallback((id: string) => {
     const file = files.find(f => f.id === id)
@@ -616,6 +718,37 @@ ${editor.getHTML()}
     />
   )
 
+  const settingsNode = (
+    <SettingsModal
+      open={settingsOpen}
+      onClose={() => setSettingsOpen(false)}
+      themePref={themePref}
+      onThemeChange={setThemePref}
+      density={density}
+      onDensityChange={setDensity}
+      reducedMotion={reducedMotion}
+      onReducedMotionChange={setReducedMotion}
+      onClearAllData={handleClearAllData}
+      filesCount={files.length}
+    />
+  )
+
+  if (view === 'home') {
+    return (
+      <ErrorBoundary>
+        <HomeLanding
+          files={files}
+          onCreate={handleCreate}
+          onOpenFiles={() => setView('dashboard')}
+          onOpenFile={handleOpen}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+        {templateNode}
+        {settingsNode}
+      </ErrorBoundary>
+    )
+  }
+
   if (view === 'dashboard') {
     return (
       <ErrorBoundary>
@@ -626,9 +759,12 @@ ${editor.getHTML()}
           onDelete={handleDelete}
           onImport={handleImport}
           darkMode={darkMode}
-          onToggleTheme={() => setDarkMode(!darkMode)}
+          onToggleTheme={handleToggleTheme}
+          onGoHome={() => setView('home')}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
         {templateNode}
+        {settingsNode}
       </ErrorBoundary>
     )
   }
@@ -676,6 +812,15 @@ ${editor.getHTML()}
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:-translate-x-1 transition-transform"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
         </button>
 
+        <button
+          onClick={() => setView('home')}
+          className="hidden md:flex items-center gap-3 hover:opacity-80 transition-opacity"
+          title="Ir para a tela inicial"
+          aria-label="Ir para a tela inicial"
+        >
+          <img src={flimasLogo} alt="Flimas" className="h-7 w-auto" />
+        </button>
+        <div className="hidden md:block w-px h-8 bg-slate-200 dark:bg-slate-700/50" />
         <div className="hidden md:flex items-center gap-3 cursor-default">
           <img src={brandLogo} alt={brandLabel} className="w-10 h-10" />
           <div className="flex flex-col">
@@ -799,12 +944,22 @@ ${editor.getHTML()}
            <div className="w-px h-6 bg-slate-200 dark:bg-slate-700/50" />
 
            <button
-              onClick={() => setDarkMode(!darkMode)}
+              onClick={handleToggleTheme}
               className="w-10 h-10 rounded-xl bg-[var(--bg-ui)] hover:bg-[var(--bg-ui-hover)] flex items-center justify-center transition-all group overflow-hidden relative border border-slate-200 dark:border-slate-700"
               aria-label="Alternar tema"
+              title="Alternar tema"
            >
               <div className={`transition-transform duration-500 ${darkMode ? 'translate-y-12' : 'translate-y-0'}`}>🌙</div>
               <div className={`absolute transition-transform duration-500 ${darkMode ? 'translate-y-0' : '-translate-y-12'}`}>☀️</div>
+           </button>
+
+           <button
+              onClick={() => setSettingsOpen(true)}
+              className="w-10 h-10 rounded-xl bg-[var(--bg-ui)] hover:bg-[var(--bg-ui-hover)] flex items-center justify-center transition-all border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+              aria-label="Configurações"
+              title="Configurações"
+           >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
            </button>
         </div>
       </header>
@@ -959,6 +1114,8 @@ ${editor.getHTML()}
           onClose={() => setShowHistory(false)}
         />
       )}
+
+      {settingsNode}
     </div>
     </ErrorBoundary>
   )
