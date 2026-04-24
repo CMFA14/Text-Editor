@@ -26,6 +26,7 @@ import TaskItem from '@tiptap/extension-task-item'
 import { FontSize } from './extensions/FontSize'
 import logoDoc from './assets/logo-doc.svg'
 import logoSheet from './assets/logo-sheet.svg'
+import logoCode from './assets/logo-code.svg'
 import MenuBar from './components/MenuBar'
 import FindReplace from './components/FindReplace'
 import Dashboard from './components/Dashboard'
@@ -35,6 +36,7 @@ import VersionHistory from './components/VersionHistory'
 import { pushSnapshot, type Snapshot } from './history'
 
 const SheetEditor = lazy(() => import('./components/SheetEditor'))
+const CodeEditor  = lazy(() => import('./components/CodeEditor'))
 
 function htmlToMarkdown(html: string): string {
   const div = document.createElement('div')
@@ -212,6 +214,7 @@ export default function App() {
   // Stable refs so saveCurrent doesn't churn
   const currentFileIdRef = useRef(currentFileId)
   const documentTitleRef = useRef(documentTitle)
+  // Buffer for the latest content coming out of non-doc editors (sheet / code)
   const sheetContentRef = useRef<string | null>(null)
   useEffect(() => { currentFileIdRef.current = currentFileId }, [currentFileId])
   useEffect(() => { documentTitleRef.current = documentTitle }, [documentTitle])
@@ -226,7 +229,7 @@ export default function App() {
       if (target.kind === 'doc') {
         if (!editor) return prev
         content = editor.getHTML()
-      } else if (target.kind === 'sheet') {
+      } else if (target.kind === 'sheet' || target.kind === 'code') {
         if (sheetContentRef.current !== null) content = sheetContentRef.current
       }
       const title = documentTitleRef.current
@@ -322,6 +325,24 @@ export default function App() {
   }, [editor])
 
   const handleCreate = useCallback((kind: FileKind = 'doc') => {
+    if (kind === 'code') {
+      // Flimas Code não usa TemplatePicker — o próprio editor escolhe linguagem.
+      const created = newFile('code', 'Código sem título', '')
+      setFiles(prev => {
+        const next = [created, ...prev]
+        saveFiles(next)
+        return next
+      })
+      queueMicrotask(() => {
+        sheetContentRef.current = null
+        setCurrentFileId(created.id)
+        setDocumentTitle(created.title)
+        setView('editor')
+        setSaved(true)
+        setLastSaved(null)
+      })
+      return
+    }
     setTemplatePicker(kind)
   }, [])
 
@@ -341,6 +362,18 @@ export default function App() {
 
       let created: FileEntry
 
+      // Mapa extensão → linguagem Flimas Code
+      const codeExtToLang: Record<string, string> = {
+        '.js':  'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
+        '.jsx': 'javascript',
+        '.ts':  'typescript', '.tsx': 'typescript',
+        '.py':  'python',
+        '.css': 'css',
+        '.json':'json',
+        '.sql': 'sql',
+      }
+      const codeExt = Object.keys(codeExtToLang).find(ext => lower.endsWith(ext))
+
       if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
         const buf = await file.arrayBuffer()
         const { xlsxBufferToUniver } = await import('./utils/sheetIo')
@@ -351,6 +384,10 @@ export default function App() {
         const { csvTextToUniver } = await import('./utils/sheetIo')
         const wb = csvTextToUniver(text, baseTitle)
         created = newFile('sheet', baseTitle || 'Planilha Importada', JSON.stringify(wb))
+      } else if (codeExt) {
+        const text = await file.text()
+        const payload = JSON.stringify({ language: codeExtToLang[codeExt], code: text })
+        created = newFile('code', baseTitle || 'Código Importado', payload)
       } else {
         const text = await file.text()
         let content: string
@@ -399,7 +436,7 @@ export default function App() {
     setDocumentTitle(snap.title)
     if (snap.kind === 'doc' && editor) {
       editor.commands.setContent(snap.content || '')
-    } else if (snap.kind === 'sheet') {
+    } else if (snap.kind === 'sheet' || snap.kind === 'code') {
       sheetContentRef.current = snap.content
       // Force remount by briefly clearing + resetting currentFileId
       setCurrentFileId(null)
@@ -581,6 +618,27 @@ ${editor.getHTML()}
   }
 
   const isSheet = currentFile?.kind === 'sheet'
+  const isCode  = currentFile?.kind === 'code'
+
+  const brandLogo =
+    isSheet ? logoSheet :
+    isCode  ? logoCode  :
+    logoDoc
+
+  const brandLabel =
+    isSheet ? 'Flimas Sheets' :
+    isCode  ? 'Flimas Code'   :
+    'Flimas Docs'
+
+  const brandSubtitle =
+    isSheet ? 'Planilha' :
+    isCode  ? 'Código'   :
+    'Documento'
+
+  const brandAccent =
+    isSheet ? 'text-emerald-600' :
+    isCode  ? 'text-sky-600'     :
+    'text-violet-500'
 
   return (
     <ErrorBoundary onReset={() => { setView('dashboard'); setCurrentFileId(null) }}>
@@ -598,10 +656,10 @@ ${editor.getHTML()}
         </button>
 
         <div className="hidden md:flex items-center gap-3 cursor-default">
-          <img src={isSheet ? logoSheet : logoDoc} alt={isSheet ? 'Flimas Sheets' : 'Flimas Docs'} className="w-10 h-10" />
+          <img src={brandLogo} alt={brandLabel} className="w-10 h-10" />
           <div className="flex flex-col">
-            <span className="font-extrabold text-lg tracking-tight leading-none bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>{isSheet ? 'Flimas Sheets' : 'Flimas Docs'}</span>
-            <span className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isSheet ? 'text-emerald-600' : 'text-violet-500'}`}>{isSheet ? 'Planilha' : 'Documento'}</span>
+            <span className="font-extrabold text-lg tracking-tight leading-none bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>{brandLabel}</span>
+            <span className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${brandAccent}`}>{brandSubtitle}</span>
           </div>
         </div>
 
@@ -686,7 +744,7 @@ ${editor.getHTML()}
              🕓
            </button>
 
-           {!isSheet && (
+           {!isSheet && !isCode && (
              <button
                onClick={handleExportPDF}
                className="hidden md:flex px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white transition-colors"
@@ -741,6 +799,26 @@ ${editor.getHTML()}
             fileId={currentFile.id}
             initialContent={currentFile.content}
             darkMode={darkMode}
+            onChange={(json) => {
+              sheetContentRef.current = json
+              setSaved(false)
+            }}
+          />
+        </Suspense>
+      ) : isCode && currentFile ? (
+        <Suspense fallback={
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <img src={logoCode} alt="" className="w-16 h-16 mb-3 mx-auto animate-pulse" />
+              <p className="text-slate-500 dark:text-slate-400 font-semibold">Carregando editor de código…</p>
+            </div>
+          </div>
+        }>
+          <CodeEditor
+            fileId={currentFile.id}
+            initialContent={currentFile.content}
+            darkMode={darkMode}
+            readOnly={readOnly}
             onChange={(json) => {
               sheetContentRef.current = json
               setSaved(false)
