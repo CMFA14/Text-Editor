@@ -5,9 +5,11 @@ interface CanvasAreaProps {
   onInit: (canvas: fabric.Canvas) => void
   readOnly?: boolean
   darkMode?: boolean
+  canvasWidth?: number
+  canvasHeight?: number
 }
 
-export default function CanvasArea({ onInit, readOnly, darkMode }: CanvasAreaProps) {
+export default function CanvasArea({ onInit, readOnly, darkMode, canvasWidth = 1024, canvasHeight = 768 }: CanvasAreaProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fabricRef = useRef<fabric.Canvas | null>(null)
@@ -17,8 +19,8 @@ export default function CanvasArea({ onInit, readOnly, darkMode }: CanvasAreaPro
 
     // Initialize Fabric Canvas
     const canvas = new fabric.Canvas(canvasRef.current, {
-      width: 1024,
-      height: 768,
+      width: canvasWidth,
+      height: canvasHeight,
       backgroundColor: darkMode ? '#1e293b' : '#ffffff',
       isDrawingMode: false,
       selection: !readOnly,
@@ -103,6 +105,14 @@ export default function CanvasArea({ onInit, readOnly, darkMode }: CanvasAreaPro
     }
   }, [darkMode])
 
+  // React to dimensions change
+  useEffect(() => {
+    if (fabricRef.current) {
+      fabricRef.current.setDimensions({ width: canvasWidth, height: canvasHeight })
+      fabricRef.current.renderAll()
+    }
+  }, [canvasWidth, canvasHeight])
+
   // React to readOnly
   useEffect(() => {
     if (fabricRef.current) {
@@ -117,8 +127,8 @@ export default function CanvasArea({ onInit, readOnly, darkMode }: CanvasAreaPro
   return (
     <div 
        ref={containerRef} 
-       className="shadow-2xl rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-center transition-all"
-       style={{ width: '100%', height: 'fit-content', maxWidth: 1024, aspectRatio: '4/3' }}
+       className="shadow-2xl rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+       style={{ maxWidth: '100%' }}
     >
       <canvas ref={canvasRef} />
     </div>
