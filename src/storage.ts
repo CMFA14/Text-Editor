@@ -33,9 +33,13 @@ export function saveFiles(files: FileEntry[]): void {
 }
 
 function normalizeFile(raw: Partial<FileEntry>): FileEntry {
+  const kind: FileEntry['kind'] =
+    raw.kind === 'sheet' ? 'sheet' :
+    raw.kind === 'code'  ? 'code'  :
+    'doc'
   return {
     id: raw.id || crypto.randomUUID(),
-    kind: raw.kind === 'sheet' ? 'sheet' : 'doc',
+    kind,
     title: raw.title || 'Sem título',
     content: raw.content ?? '',
     lastModified: raw.lastModified ?? Date.now(),
@@ -88,10 +92,14 @@ function migrateLegacy(): FileEntry[] {
 
 export function newFile(kind: FileKind, title?: string, content = ''): FileEntry {
   const now = Date.now()
+  const defaultTitle =
+    kind === 'doc'   ? 'Documento sem título'  :
+    kind === 'sheet' ? 'Planilha sem título'   :
+    'Código sem título'
   return {
     id: crypto.randomUUID(),
     kind,
-    title: title || (kind === 'doc' ? 'Documento sem título' : 'Planilha sem título'),
+    title: title || defaultTitle,
     content,
     lastModified: now,
     createdAt: now,
