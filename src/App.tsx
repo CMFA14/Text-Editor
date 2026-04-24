@@ -23,7 +23,6 @@ import Subscript from '@tiptap/extension-subscript'
 import Superscript from '@tiptap/extension-superscript'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
-import { Download, Upload, Plus, FileText, Search, Maximize2, Settings, History, Palette } from 'lucide-react'
 import { FontSize } from './extensions/FontSize'
 import logoDoc from './assets/logo-doc.svg'
 import logoSheet from './assets/logo-sheet.svg'
@@ -232,7 +231,7 @@ export default function App() {
       if (target.kind === 'doc') {
         if (!editor) return prev
         content = editor.getHTML()
-      } else if (target.kind === 'sheet' || target.kind === 'code') {
+      } else if (target.kind === 'sheet' || target.kind === 'code' || target.kind === 'image') {
         if (sheetContentRef.current !== null) content = sheetContentRef.current
       }
       const title = documentTitleRef.current
@@ -377,7 +376,21 @@ export default function App() {
       }
       const codeExt = Object.keys(codeExtToLang).find(ext => lower.endsWith(ext))
 
-      if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+      const imageExts = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg']
+      const isImageFile = imageExts.some(ext => lower.endsWith(ext))
+
+      if (isImageFile) {
+        // Importar imagem → abre no Flimas Studio com a imagem já colocada no canvas
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result || ''))
+          reader.onerror = () => reject(reader.error)
+          reader.readAsDataURL(file)
+        })
+        // Marcamos o import pendente via payload especial que o FlimasEditor reconhece
+        const payload = JSON.stringify({ __flimasImport: dataUrl })
+        created = newFile('image', baseTitle || 'Imagem Importada', payload)
+      } else if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
         const buf = await file.arrayBuffer()
         const { xlsxBufferToUniver } = await import('./utils/sheetIo')
         const wb = xlsxBufferToUniver(buf, baseTitle)
@@ -439,7 +452,7 @@ export default function App() {
     setDocumentTitle(snap.title)
     if (snap.kind === 'doc' && editor) {
       editor.commands.setContent(snap.content || '')
-    } else if (snap.kind === 'sheet' || snap.kind === 'code') {
+    } else if (snap.kind === 'sheet' || snap.kind === 'code' || snap.kind === 'image') {
       sheetContentRef.current = snap.content
       // Force remount by briefly clearing + resetting currentFileId
       setCurrentFileId(null)
