@@ -1,4 +1,4 @@
-export type FileKind = 'doc' | 'sheet' | 'code'
+export type FileKind = 'doc' | 'sheet' | 'code' | 'image'
 
 export interface FileEntry {
   id: string

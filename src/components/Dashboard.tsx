@@ -2,7 +2,9 @@ import React, { useRef, useState, useMemo } from 'react'
 import type { FileEntry, FileKind } from '../types'
 import logoDoc from '../assets/logo-doc.svg'
 import logoSheet from '../assets/logo-sheet.svg'
-import logoCode from '../assets/logo-code.svg'
+import logoCode from '../assets/logo-flimasCode.png'
+import logoStudio from '../assets/logo-flimasStudio.png'
+import { Image as ImageIcon } from 'lucide-react'
 
 interface DashboardProps {
   files: FileEntry[]
@@ -14,7 +16,7 @@ interface DashboardProps {
   onToggleTheme: () => void
 }
 
-type FilterKind = 'all' | 'doc' | 'sheet' | 'code'
+type FilterKind = 'all' | 'doc' | 'sheet' | 'code' | 'image'
 
 const Icons = {
   Plus: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
@@ -98,6 +100,7 @@ export default function Dashboard({
     doc: files.filter(f => f.kind === 'doc').length,
     sheet: files.filter(f => f.kind === 'sheet').length,
     code: files.filter(f => f.kind === 'code').length,
+    image: files.filter(f => f.kind === 'image').length,
   }), [files])
 
   const handleCreateClick = (kind: FileKind) => {
@@ -109,12 +112,14 @@ export default function Dashboard({
     filter === 'doc'   ? 'Flimas Docs' :
     filter === 'sheet' ? 'Flimas Sheets' :
     filter === 'code'  ? 'Flimas Code' :
+    filter === 'image' ? 'Flimas Studio' :
     'Meus Arquivos'
 
   const headerSubtitle =
     filter === 'doc'   ? 'Documentos de texto rico.' :
     filter === 'sheet' ? 'Planilhas com células e fórmulas.' :
     filter === 'code'  ? 'Edite, rode e compartilhe trechos de código.' :
+    filter === 'image' ? 'Edição avançada de imagens.' :
     'Documentos, planilhas e códigos em um só lugar.'
 
   return (
@@ -164,10 +169,17 @@ export default function Dashboard({
           />
 
           <SideNav
-            icon={<img src={logoCode} alt="" className="w-5 h-5" />}
+            icon={<img src={logoCode} alt="" className="w-5 h-5 rounded" />}
             label={`Flimas Code (${counts.code})`}
             active={filter === 'code'}
             onClick={() => setFilter('code')}
+          />
+
+          <SideNav
+            icon={<img src={logoStudio} alt="" className="w-5 h-5 rounded" />}
+            label={`Flimas Studio (${counts.image})`}
+            active={filter === 'image'}
+            onClick={() => setFilter('image')}
           />
         </nav>
 
@@ -267,6 +279,17 @@ export default function Dashboard({
                           <div className="text-[11px] font-medium text-slate-500">Flimas Code</div>
                         </div>
                       </button>
+                      <button
+                        onClick={() => handleCreateClick('image')}
+                        className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[var(--primary-light)] dark:hover:bg-slate-700 transition-colors border-t border-[var(--border-light)]"
+                        role="menuitem"
+                      >
+                        <img src={logoStudio} alt="" className="w-6 h-6 rounded-md shadow-sm" />
+                        <div>
+                          <div>Nova Imagem</div>
+                          <div className="text-[11px] font-medium text-slate-500">Flimas Studio</div>
+                        </div>
+                      </button>
                     </div>
                   </>
                 )}
@@ -299,8 +322,15 @@ export default function Dashboard({
 
             {(filter === 'all' || filter === 'code') && (
               <button onClick={() => handleCreateClick('code')} className="action-card group">
-                <img src={logoCode} alt="" className="w-14 h-14 group-hover:scale-110 transition-transform" />
+                <img src={logoCode} alt="" className="w-14 h-14 rounded-2xl shadow-md group-hover:scale-110 transition-transform" />
                 <span className="action-card-text">Novo Código</span>
+              </button>
+            )}
+
+            {(filter === 'all' || filter === 'image') && (
+              <button onClick={() => handleCreateClick('image')} className="action-card group">
+                <img src={logoStudio} alt="" className="w-14 h-14 rounded-2xl shadow-md group-hover:scale-110 transition-transform" />
+                <span className="action-card-text">Nova Imagem</span>
               </button>
             )}
 
@@ -315,14 +345,16 @@ export default function Dashboard({
               const fileLogo =
                 file.kind === 'sheet' ? logoSheet :
                 file.kind === 'code'  ? logoCode  :
+                file.kind === 'image' ? logoStudio :
                 logoDoc
               const fileKindLabel =
                 file.kind === 'sheet' ? 'Planilha' :
                 file.kind === 'code'  ? 'Código'   :
+                file.kind === 'image' ? 'Imagem'   :
                 'Documento'
               return (
               <div key={file.id} className="doc-card" onClick={() => onOpen(file.id)}>
-                <img src={fileLogo} alt="" className="w-12 h-12" />
+                <img src={fileLogo} alt="" className="w-12 h-12 rounded-xl shadow-sm" />
                 <div className="flex-1 min-w-0">
                   <h3 className="doc-card-title truncate" title={file.title}>
                     {file.title || 'Sem título'}
@@ -355,6 +387,10 @@ export default function Dashboard({
                 <img src={logoDoc} alt="" className="w-20 h-20 mb-4" />
               ) : filter === 'code' ? (
                 <img src={logoCode} alt="" className="w-20 h-20 mb-4" />
+              ) : filter === 'image' ? (
+                <div className="w-20 h-20 mb-4 rounded-xl flex items-center justify-center text-pink-500 bg-pink-100/50 dark:bg-pink-900/30">
+                  <ImageIcon size={48} />
+                </div>
               ) : (
                 <div className="text-6xl mb-4">📂</div>
               )}
@@ -362,6 +398,7 @@ export default function Dashboard({
                 {filter === 'all'   ? 'Nenhum arquivo ainda'    :
                  filter === 'doc'   ? 'Nenhum documento ainda'  :
                  filter === 'sheet' ? 'Nenhuma planilha ainda'  :
+                 filter === 'image' ? 'Nenhuma imagem ainda'    :
                                       'Nenhum código ainda'}
               </h3>
               <p className="max-w-xs mt-2 text-slate-500 dark:text-slate-400">
