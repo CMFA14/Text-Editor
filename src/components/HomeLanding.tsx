@@ -5,6 +5,7 @@ import logoDoc from '../assets/logo-doc.svg'
 import logoSheet from '../assets/logo-sheet.svg'
 import logoCode from '../assets/logo-flimasCode.png'
 import logoStudio from '../assets/logo-flimasStudio.png'
+import logoNotes from '../assets/logo-flimasNotes.svg'
 import { ArrowRight, Clock, Sparkles, Settings as SettingsIcon, FolderOpen } from 'lucide-react'
 
 interface HomeLandingProps {
@@ -65,6 +66,16 @@ const PRODUCTS: {
     cardBg: 'bg-pink-50/60 dark:bg-pink-500/10',
     hoverBorder: 'hover:border-pink-400',
   },
+  {
+    kind: 'notes',
+    name: 'Notes',
+    title: 'Flimas Notes',
+    subtitle: 'Anotações rápidas em Markdown com preview ao vivo.',
+    logo: logoNotes,
+    accent: 'text-amber-600 dark:text-amber-400',
+    cardBg: 'bg-amber-50/60 dark:bg-amber-500/10',
+    hoverBorder: 'hover:border-amber-400',
+  },
 ]
 
 export default function HomeLanding({
@@ -79,9 +90,17 @@ export default function HomeLanding({
       .format(new Date(ts))
 
   const kindLabel = (k: FileKind) =>
-    k === 'doc' ? 'Documento' : k === 'sheet' ? 'Planilha' : k === 'code' ? 'Código' : 'Imagem'
+    k === 'doc' ? 'Documento' :
+    k === 'sheet' ? 'Planilha' :
+    k === 'code' ? 'Código' :
+    k === 'notes' ? 'Nota' :
+    'Imagem'
   const kindLogo = (k: FileKind) =>
-    k === 'doc' ? logoDoc : k === 'sheet' ? logoSheet : k === 'code' ? logoCode : logoStudio
+    k === 'doc' ? logoDoc :
+    k === 'sheet' ? logoSheet :
+    k === 'code' ? logoCode :
+    k === 'notes' ? logoNotes :
+    logoStudio
 
   return (
     <div className="min-h-screen bg-[var(--bg-app)] transition-colors duration-500">
@@ -118,7 +137,7 @@ export default function HomeLanding({
           <img src={flimasLogo} alt="Flimas" className="h-20 md:h-24 w-auto select-none" draggable={false} />
           <span className="mt-2 text-xs md:text-sm font-bold uppercase tracking-[0.45em] text-[var(--primary)]">workspace</span>
           <h1 className="mt-6 text-3xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-white max-w-3xl leading-tight">
-            Documentos, planilhas, código e imagens.
+            Documentos, planilhas, código, imagens e notas.
             <span className="block mt-1 bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>
               Um só workspace.
             </span>
@@ -156,7 +175,7 @@ export default function HomeLanding({
             <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 dark:text-white mt-1">O que você quer criar hoje?</h2>
           </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {PRODUCTS.map(p => (
             <button
               key={p.kind}

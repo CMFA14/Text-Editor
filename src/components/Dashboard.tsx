@@ -400,6 +400,13 @@ export default function Dashboard({
               </button>
             )}
 
+            {(filter === 'all' || filter === 'notes') && (
+              <button onClick={() => handleCreateClick('notes')} className="action-card group">
+                <img src={logoNotes} alt="" className="w-14 h-14 group-hover:scale-110 transition-transform" />
+                <span className="action-card-text">Nova Nota</span>
+              </button>
+            )}
+
             <button onClick={() => fileInputRef.current?.click()} className="action-card group">
               <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover:scale-110 transition-transform">
                 <Icons.Upload />
@@ -412,11 +419,13 @@ export default function Dashboard({
                 file.kind === 'sheet' ? logoSheet :
                 file.kind === 'code'  ? logoCode  :
                 file.kind === 'image' ? logoStudio :
+                file.kind === 'notes' ? logoNotes :
                 logoDoc
               const fileKindLabel =
                 file.kind === 'sheet' ? 'Planilha' :
                 file.kind === 'code'  ? 'Código'   :
                 file.kind === 'image' ? 'Imagem'   :
+                file.kind === 'notes' ? 'Nota'     :
                 'Documento'
               const downloadOptions = getDownloadOptions(file)
               const isMenuOpen = menuOpenId === file.id
@@ -511,6 +520,10 @@ export default function Dashboard({
                 <div className="w-20 h-20 mb-4 rounded-xl flex items-center justify-center text-pink-500 bg-pink-100/50 dark:bg-pink-900/30">
                   <ImageIcon size={48} />
                 </div>
+              ) : filter === 'notes' ? (
+                <div className="w-20 h-20 mb-4 rounded-xl flex items-center justify-center text-amber-500 bg-amber-100/50 dark:bg-amber-900/30">
+                  <StickyNote size={48} />
+                </div>
               ) : (
                 <div className="text-6xl mb-4">📂</div>
               )}
@@ -519,6 +532,7 @@ export default function Dashboard({
                  filter === 'doc'   ? 'Nenhum documento ainda'  :
                  filter === 'sheet' ? 'Nenhuma planilha ainda'  :
                  filter === 'image' ? 'Nenhuma imagem ainda'    :
+                 filter === 'notes' ? 'Nenhuma nota ainda'      :
                                       'Nenhum código ainda'}
               </h3>
               <p className="max-w-xs mt-2 text-slate-500 dark:text-slate-400">
