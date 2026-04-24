@@ -219,7 +219,7 @@ export default function MenuBar({
   }
 
   return (
-    <div className="flex flex-col glass-panel border-b border-white select-none relative z-50" onClick={closeAll}>
+    <div className="flex flex-col glass-panel border-b border-white select-none sticky top-16 z-50" onClick={closeAll}>
 
       {/* ── Menu Bar Top ───────────────────────────── */}
       <div className="flex items-center gap-1 px-2 md:px-4 py-1.5 border-b border-white/20 text-sm font-medium overflow-x-auto scrollbar-thin">

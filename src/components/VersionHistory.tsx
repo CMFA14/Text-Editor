@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { loadHistory, type Snapshot } from '../history'
+import logoDoc from '../assets/logo-doc.svg'
+import logoSheet from '../assets/logo-sheet.svg'
 
 interface VersionHistoryProps {
   fileId: string
@@ -79,7 +81,7 @@ export default function VersionHistory({ fileId, onRestore, onClose }: VersionHi
               key={v.timestamp}
               className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-colors flex items-start gap-4"
             >
-              <div className="text-2xl">{v.kind === 'sheet' ? '📊' : '📝'}</div>
+              <img src={v.kind === 'sheet' ? logoSheet : logoDoc} alt="" className="w-8 h-8 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="font-bold text-slate-800 dark:text-slate-100 truncate">{v.title || 'Sem título'}</span>

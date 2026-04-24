@@ -169,13 +169,23 @@ body {
 }
 
 .editor-page {
-  background: var(--bg-page);
+  background-color: var(--bg-page);
   border-radius: 8px;
   box-shadow: var(--shadow-lg);
   min-height: 1056px;
   width: 816px;
   margin: 0 auto;
   transition: transform 0.2s, background-color 0.3s;
+  position: relative;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 1055px,
+    rgba(148, 163, 184, 0.25) 1055px,
+    rgba(148, 163, 184, 0.25) 1056px
+  );
+  background-size: 100% 1056px;
+  background-repeat: repeat-y;
 }
 
 /* ─── Scrollbars ───────────────────────────────────── */

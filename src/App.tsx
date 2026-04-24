@@ -24,6 +24,8 @@ import Superscript from '@tiptap/extension-superscript'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import { FontSize } from './extensions/FontSize'
+import logoDoc from './assets/logo-doc.svg'
+import logoSheet from './assets/logo-sheet.svg'
 import MenuBar from './components/MenuBar'
 import FindReplace from './components/FindReplace'
 import Dashboard from './components/Dashboard'
@@ -263,9 +265,9 @@ export default function App() {
   // Sync title with document metadata and browser tab
   useEffect(() => {
     if (view === 'editor') {
-      document.title = `${documentTitle} — DocFlex`
+      document.title = `${documentTitle} — Flimas`
     } else {
-      document.title = 'DocFlex — Meus Documentos'
+      document.title = 'Flimas — Meus Arquivos'
     }
   }, [documentTitle, view])
 
@@ -596,12 +598,10 @@ ${editor.getHTML()}
         </button>
 
         <div className="hidden md:flex items-center gap-3 cursor-default">
-          <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-             <span className="text-xl text-white">{isSheet ? '📊' : '📝'}</span>
-          </div>
+          <img src={isSheet ? logoSheet : logoDoc} alt={isSheet ? 'Flimas Sheets' : 'Flimas Docs'} className="w-10 h-10" />
           <div className="flex flex-col">
-            <span className="font-extrabold text-lg tracking-tight leading-none bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>DocFlex</span>
-            <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-0.5">{isSheet ? 'Planilha' : 'Workspace'}</span>
+            <span className="font-extrabold text-lg tracking-tight leading-none bg-clip-text text-transparent" style={{ backgroundImage: 'var(--logo-gradient)' }}>{isSheet ? 'Flimas Sheets' : 'Flimas Docs'}</span>
+            <span className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isSheet ? 'text-emerald-600' : 'text-indigo-500'}`}>{isSheet ? 'Planilha' : 'Documento'}</span>
           </div>
         </div>
 
@@ -732,7 +732,7 @@ ${editor.getHTML()}
         <Suspense fallback={
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
-              <div className="text-5xl mb-3 animate-pulse">📊</div>
+              <img src={logoSheet} alt="" className="w-16 h-16 mb-3 mx-auto animate-pulse" />
               <p className="text-slate-500 dark:text-slate-400 font-semibold">Carregando planilha…</p>
             </div>
           </div>
