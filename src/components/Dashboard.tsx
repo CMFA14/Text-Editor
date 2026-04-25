@@ -1,4 +1,5 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import type { FileEntry, FileKind } from '../types'
 import flimasLogo from '../assets/flimas-logo.svg'
 import logoDoc from '../assets/logo-doc.svg'
@@ -77,14 +78,43 @@ export default function Dashboard({
   const [showCreateMenu, setShowCreateMenu] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
 
-  // Close per-card menu on Escape or outside-click handled by overlay
+  // Close per-card menu on Escape or click outside (sem overlay que intercepta cliques em outros "...")
   useEffect(() => {
     if (!menuOpenId) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpenId(null) }
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      // Não fecha se o clique foi dentro do menu, dentro do botão "..." ou em outro botão "..."
+      if (target.closest('[data-card-menu]') || target.closest('[data-card-menu-trigger]')) return
+      setMenuOpenId(null)
+    }
+    // Reposiciona o menu se a janela for redimensionada/scrollar
+    const onScrollOrResize = () => setMenuOpenId(null)
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('resize', onScrollOrResize)
+    window.addEventListener('scroll', onScrollOrResize, true)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('resize', onScrollOrResize)
+      window.removeEventListener('scroll', onScrollOrResize, true)
+    }
   }, [menuOpenId])
+
+  // Calcula posição do menu a partir do botão clicado
+  const openMenuFor = (id: string, btn: HTMLElement) => {
+    const rect = btn.getBoundingClientRect()
+    const MENU_W = 240
+    const margin = 8
+    const left = Math.min(window.innerWidth - MENU_W - margin, Math.max(margin, rect.right - MENU_W))
+    const top = rect.bottom + 6
+    setMenuPos({ top, left })
+    setMenuOpenId(id)
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -427,10 +457,13 @@ export default function Dashboard({
                 file.kind === 'image' ? 'Imagem'   :
                 file.kind === 'notes' ? 'Nota'     :
                 'Documento'
-              const downloadOptions = getDownloadOptions(file)
               const isMenuOpen = menuOpenId === file.id
               return (
-              <div key={file.id} className="doc-card relative" onClick={() => onOpen(file.id)}>
+              <div
+                key={file.id}
+                className={`doc-card relative ${isMenuOpen ? 'menu-active' : ''}`}
+                onClick={() => onOpen(file.id)}
+              >
                 <img src={fileLogo} alt="" className="w-12 h-12 rounded-xl shadow-sm" />
                 <div className="flex-1 min-w-0">
                   <h3 className="doc-card-title truncate" title={file.title}>
@@ -443,10 +476,15 @@ export default function Dashboard({
 
                 <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                   <button
+                    data-card-menu-trigger
                     className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-[var(--primary)] hover:bg-[var(--primary-light)] transition-colors"
                     onClick={(e) => {
                       e.stopPropagation()
-                      setMenuOpenId(isMenuOpen ? null : file.id)
+                      if (isMenuOpen) {
+                        setMenuOpenId(null)
+                      } else {
+                        openMenuFor(file.id, e.currentTarget)
+                      }
                     }}
                     title="Mais opções"
                     aria-label="Mais opções"
@@ -456,57 +494,62 @@ export default function Dashboard({
                     <MoreHorizontal size={16} />
                   </button>
                 </div>
-
-                {isMenuOpen && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-30"
-                      onClick={(e) => { e.stopPropagation(); setMenuOpenId(null) }}
-                    />
-                    <div
-                      className="absolute right-3 top-12 z-40 w-60 bg-[var(--bg-page)] rounded-xl shadow-xl border border-[var(--border-light)] overflow-hidden"
-                      role="menu"
-                      onClick={e => e.stopPropagation()}
-                    >
-                      <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
-                        <Download size={10} /> Baixar como
-                      </div>
-                      {downloadOptions.map(opt => (
-                        <button
-                          key={opt.id}
-                          onClick={async () => {
-                            setMenuOpenId(null)
-                            try { await opt.run() } catch (err) { console.error(err) }
-                          }}
-                          className="w-full px-4 py-2.5 flex items-center justify-between gap-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[var(--primary-light)] dark:hover:bg-slate-700 transition-colors"
-                          role="menuitem"
-                        >
-                          <div className="flex flex-col leading-tight min-w-0">
-                            <span className="truncate">{opt.label}</span>
-                            {opt.hint && <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate">{opt.hint}</span>}
-                          </div>
-                          <Download size={14} className="text-slate-400 shrink-0" />
-                        </button>
-                      ))}
-                      <div className="border-t border-[var(--border-light)]" />
-                      <button
-                        onClick={() => {
-                          setMenuOpenId(null)
-                          onDelete(file.id)
-                        }}
-                        className="w-full px-4 py-2.5 flex items-center gap-3 text-left text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-                        role="menuitem"
-                      >
-                        <Trash2 size={14} />
-                        Excluir arquivo
-                      </button>
-                    </div>
-                  </>
-                )}
               </div>
               )
             })}
           </div>
+
+          {/* Menu de ações do card — renderizado em portal para não ser clipado pelo overflow:hidden do .doc-card */}
+          {menuOpenId && menuPos && (() => {
+            const file = files.find(f => f.id === menuOpenId)
+            if (!file) return null
+            const downloadOptions = getDownloadOptions(file)
+            return createPortal(
+              <div
+                data-card-menu
+                role="menu"
+                style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, width: 240, zIndex: 60 }}
+                className="bg-[var(--bg-page)] rounded-xl shadow-xl border border-[var(--border-light)] overflow-hidden"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
+                  <Download size={10} /> Baixar como
+                </div>
+                <div className="max-h-[60vh] overflow-y-auto">
+                  {downloadOptions.map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={async () => {
+                        setMenuOpenId(null)
+                        try { await opt.run() } catch (err) { console.error(err) }
+                      }}
+                      className="w-full px-4 py-2.5 flex items-center justify-between gap-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[var(--primary-light)] dark:hover:bg-slate-700 transition-colors"
+                      role="menuitem"
+                    >
+                      <div className="flex flex-col leading-tight min-w-0">
+                        <span className="truncate">{opt.label}</span>
+                        {opt.hint && <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate">{opt.hint}</span>}
+                      </div>
+                      <Download size={14} className="text-slate-400 shrink-0" />
+                    </button>
+                  ))}
+                </div>
+                <div className="border-t border-[var(--border-light)]" />
+                <button
+                  onClick={() => {
+                    setMenuOpenId(null)
+                    onDelete(file.id)
+                  }}
+                  className="w-full px-4 py-2.5 flex items-center gap-3 text-left text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                  role="menuitem"
+                >
+                  <Trash2 size={14} />
+                  Excluir arquivo
+                </button>
+              </div>,
+              document.body,
+            )
+          })()}
 
           {visibleFiles.length === 0 && (
             <div className="mt-20 flex flex-col items-center justify-center text-center opacity-60">

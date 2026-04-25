@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { markdownToHtml } from '../utils/markdown'
+import { markdownToHtml, toggleTaskInMarkdown } from '../utils/markdown'
 import { sanitizeHtml } from '../utils/sanitize'
 
 interface NotesEditorProps {
@@ -12,15 +12,17 @@ interface NotesEditorProps {
 
 /**
  * Flimas Notes — editor de anotações rápidas.
- * Suporta Markdown com preview lado a lado, contador de palavras/caracteres,
- * inserção rápida de timestamps e auto-save via onChange.
+ * Markdown com preview lado a lado (toggle Escrever / Dividido / Preview),
+ * checkboxes interativos no preview, contador de palavras, atalhos de
+ * inserção (data, título, lista, checklist) e auto-save via onChange.
  */
 export default function NotesEditor({
   fileId, initialContent, darkMode, readOnly, onChange,
 }: NotesEditorProps) {
   const [value, setValue] = useState(initialContent || '')
-  const [mode, setMode] = useState<'write' | 'split' | 'preview'>('write')
+  const [mode, setMode] = useState<'write' | 'split' | 'preview'>('split')
   const taRef = useRef<HTMLTextAreaElement>(null)
+  const previewRef = useRef<HTMLDivElement>(null)
   const onChangeRef = useRef(onChange)
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
 
@@ -57,7 +59,7 @@ export default function NotesEditor({
 
   const insertChecklist = () => insertAtCursor(`- [ ] Primeira tarefa\n- [ ] Segunda tarefa\n- [ ] Terceira tarefa\n`)
   const insertHeading = () => insertAtCursor(`\n## Título\n\n`)
-  const insertBullet = () => insertAtCursor(`- \n- \n- \n`)
+  const insertBullet = () => insertAtCursor(`- item 1\n- item 2\n- item 3\n`)
 
   const previewHtml = useMemo(() => {
     try {
@@ -67,8 +69,26 @@ export default function NotesEditor({
     }
   }, [value])
 
+  // Toggle de checkbox no preview → atualiza markdown bruto
+  const handlePreviewClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (readOnly) return
+    const target = e.target as HTMLElement
+    if (target.tagName !== 'INPUT' || target.getAttribute('type') !== 'checkbox') return
+    const idxStr = target.getAttribute('data-task-index')
+    if (idxStr == null) return
+    const idx = Number(idxStr)
+    if (!Number.isFinite(idx)) return
+    e.preventDefault()
+    setValue(prev => toggleTaskInMarkdown(prev, idx))
+  }, [readOnly])
+
   const wordCount = useMemo(() => (value.match(/\S+/g) || []).length, [value])
   const charCount = value.length
+
+  // Background sutilmente diferente no preview pra deixar claro que NÃO é o editor
+  const previewBg = darkMode
+    ? 'bg-gradient-to-b from-amber-950/10 via-transparent to-transparent'
+    : 'bg-gradient-to-b from-amber-50/40 via-transparent to-transparent'
 
   return (
     <div className="flex-1 flex flex-col bg-[var(--bg-app)] transition-colors">
@@ -117,25 +137,37 @@ export default function NotesEditor({
       <div className="flex-1 min-h-0 flex">
         {(mode === 'write' || mode === 'split') && (
           <div className={mode === 'split' ? 'flex-1 min-w-0 border-r border-[var(--border-light)]' : 'flex-1 min-w-0'}>
+            {mode === 'split' && (
+              <div className="px-6 md:px-10 pt-4 pb-1 text-[10px] font-bold uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 select-none">
+                Markdown
+              </div>
+            )}
             <textarea
               ref={taRef}
               value={value}
               onChange={(e) => setValue(e.target.value)}
               readOnly={readOnly}
               placeholder="Comece sua anotação…  (Markdown suportado)"
-              className={`w-full h-full p-6 md:p-10 bg-transparent text-base leading-relaxed resize-none outline-none focus:outline-none focus:ring-0
-                ${darkMode ? 'text-slate-100 placeholder-slate-500' : 'text-slate-800 placeholder-slate-400'}`}
-              style={{ fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif' }}
+              className={`w-full ${mode === 'split' ? 'h-[calc(100%-2rem)]' : 'h-full'} px-6 md:px-10 pb-6 md:pb-10 pt-2 bg-transparent text-base leading-relaxed resize-none outline-none focus:outline-none focus:ring-0 font-mono
+                ${darkMode ? 'text-slate-100 placeholder-slate-500' : 'text-slate-700 placeholder-slate-400'}`}
+              style={{ fontFamily: 'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace', fontSize: '0.95rem' }}
             />
           </div>
         )}
 
         {(mode === 'preview' || mode === 'split') && (
           <div
-            className={`${mode === 'split' ? 'flex-1 min-w-0' : 'flex-1'} overflow-auto`}
+            ref={previewRef}
+            onClick={handlePreviewClick}
+            className={`${mode === 'split' ? 'flex-1 min-w-0' : 'flex-1'} overflow-auto ${previewBg}`}
           >
+            {mode === 'split' && (
+              <div className="px-6 md:px-10 pt-4 pb-1 text-[10px] font-bold uppercase tracking-[0.25em] text-amber-600 dark:text-amber-400 select-none">
+                Preview
+              </div>
+            )}
             <div
-              className={`prose dark:prose-invert max-w-none p-6 md:p-10 ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}
+              className={`notes-preview prose dark:prose-invert max-w-none px-6 md:px-10 pb-6 md:pb-10 ${mode === 'split' ? 'pt-2' : 'pt-6'} ${darkMode ? 'text-slate-100' : 'text-slate-800'}`}
               dangerouslySetInnerHTML={{ __html: previewHtml }}
             />
           </div>

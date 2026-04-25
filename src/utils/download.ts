@@ -1,4 +1,4 @@
-import type { FileEntry, CodeLanguage } from '../types'
+import type { FileEntry, CodeLanguage, TasksDoc } from '../types'
 
 /**
  * Helpers para download direto a partir da Dashboard (sem abrir o editor).
@@ -332,6 +332,79 @@ export function getDownloadOptions(file: FileEntry): DownloadOption[] {
       },
     ]
     return opts
+  }
+
+  if (file.kind === 'tasks') {
+    const doc = safeParse<TasksDoc>(file.content || '')
+    const columns = doc?.columns ?? []
+
+    const toMarkdown = (): string => {
+      const lines: string[] = [`# ${t}`, '']
+      for (const col of columns) {
+        lines.push(`## ${col.title} (${col.cards.length})`, '')
+        if (col.cards.length === 0) {
+          lines.push('_Sem tarefas._', '')
+          continue
+        }
+        for (const card of col.cards) {
+          lines.push(`- [ ] **${card.text || 'Sem título'}**${card.due ? ` _(prazo: ${card.due})_` : ''}`)
+          if (card.notes) {
+            for (const ln of card.notes.split('\n')) {
+              lines.push(`  ${ln}`)
+            }
+          }
+        }
+        lines.push('')
+      }
+      return lines.join('\n')
+    }
+
+    const toHtmlBoard = (): string => {
+      const colHtml = columns.map(col => `
+        <section style="break-inside:avoid;margin:0 0 16px 0;padding:12px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;">
+          <h2 style="margin:0 0 8px 0;font-size:14px;color:#0f172a;">${escapeHtml(col.title)} <span style="color:#64748b;font-weight:600;font-size:12px;">(${col.cards.length})</span></h2>
+          ${col.cards.map(c => `
+            <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:8px 10px;margin-bottom:6px;">
+              <div style="font-weight:700;color:#0f172a;font-size:13px;">${escapeHtml(c.text || 'Sem título')}</div>
+              ${c.due ? `<div style="font-size:11px;color:#b45309;margin-top:2px;">Prazo: ${escapeHtml(c.due)}</div>` : ''}
+              ${c.notes ? `<div style="white-space:pre-wrap;font-size:12px;color:#475569;margin-top:4px;">${escapeHtml(c.notes)}</div>` : ''}
+            </div>
+          `).join('')}
+          ${col.cards.length === 0 ? `<div style="color:#94a3b8;font-style:italic;font-size:12px;">Sem tarefas</div>` : ''}
+        </section>
+      `).join('')
+      return `<h1 style="margin:0 0 16px 0;color:#0f172a;">${escapeHtml(t)}</h1>${colHtml}`
+    }
+
+    return [
+      {
+        id: 'tasks-md',
+        label: 'Markdown (.md)',
+        hint: 'Lista de tarefas formatada',
+        accent: 'slate',
+        run: () => triggerDownload(
+          new Blob([toMarkdown()], { type: 'text/markdown;charset=utf-8' }),
+          safeName(t, 'md'),
+        ),
+      },
+      {
+        id: 'tasks-pdf',
+        label: 'PDF',
+        hint: 'Quadro completo em PDF',
+        accent: 'rose',
+        run: () => htmlToPdf(toHtmlBoard(), t, 'rich'),
+      },
+      {
+        id: 'tasks-json',
+        label: 'Flimas Tasks (.json)',
+        hint: 'Formato nativo recarregável',
+        accent: 'violet',
+        run: () => triggerDownload(
+          new Blob([file.content || '{}'], { type: 'application/json' }),
+          safeName(t, 'flimas-tasks.json'),
+        ),
+      },
+    ]
   }
 
   if (file.kind === 'image') {

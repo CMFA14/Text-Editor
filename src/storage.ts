@@ -38,6 +38,7 @@ function normalizeFile(raw: Partial<FileEntry>): FileEntry {
     raw.kind === 'code'  ? 'code'  :
     raw.kind === 'image' ? 'image' :
     raw.kind === 'notes' ? 'notes' :
+    raw.kind === 'tasks' ? 'tasks' :
     'doc'
   return {
     id: raw.id || crypto.randomUUID(),
@@ -100,6 +101,7 @@ export function newFile(kind: FileKind, title?: string, content = ''): FileEntry
     kind === 'code'  ? 'Código sem título'     :
     kind === 'image' ? 'Imagem sem título'     :
     kind === 'notes' ? 'Nota sem título'       :
+    kind === 'tasks' ? 'Quadro sem título'     :
     'Sem título'
   return {
     id: crypto.randomUUID(),

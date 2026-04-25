@@ -4,6 +4,8 @@ import { markdownToHtml } from './utils/markdown'
 import { sanitizeHtml } from './utils/sanitize'
 import { loadFiles, saveFiles, newFile } from './storage'
 import type { FileEntry, FileKind } from './types'
+import { isProKind } from './types'
+import { loadPro, savePro, canCreate as canCreateForPlan } from './pro'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import TextAlign from '@tiptap/extension-text-align'
@@ -30,6 +32,7 @@ import logoSheet from './assets/logo-sheet.svg'
 import logoCode from './assets/logo-flimasCode.png'
 import logoStudio from './assets/logo-flimasStudio.png'
 import logoNotes from './assets/logo-flimasNotes.svg'
+import logoTasks from './assets/logo-flimasTasks.svg'
 import MenuBar from './components/MenuBar'
 import FindReplace from './components/FindReplace'
 import Dashboard from './components/Dashboard'
@@ -38,6 +41,8 @@ import TemplatePicker from './components/TemplatePicker'
 import VersionHistory from './components/VersionHistory'
 import HomeLanding from './components/HomeLanding'
 import SettingsModal, { type ThemePreference, type DensityPreference } from './components/SettingsModal'
+import UpgradeModal from './components/UpgradeModal'
+import { ToastHost, toast } from './components/Toast'
 import { pushSnapshot, type Snapshot } from './history'
 
 const SETTINGS_KEY = 'flimas_settings_v1'
@@ -77,6 +82,7 @@ const SheetEditor = lazy(() => import('./components/SheetEditor'))
 const CodeEditor  = lazy(() => import('./components/CodeEditor'))
 const FlimasEditor = lazy(() => import('./components/flimas/FlimasEditor'))
 const NotesEditor = lazy(() => import('./components/NotesEditor'))
+const TasksEditor = lazy(() => import('./components/TasksEditor'))
 
 function htmlToMarkdown(html: string): string {
   const div = document.createElement('div')
@@ -172,6 +178,28 @@ export default function App() {
   const [themePref, setThemePref] = useState<ThemePreference>(initialSettings.themePref)
   const [density, setDensity] = useState<DensityPreference>(initialSettings.density)
   const [reducedMotion, setReducedMotion] = useState<boolean>(initialSettings.reducedMotion)
+
+  // Pro plan state (persistido em localStorage)
+  const initialPro = useMemo(() => loadPro(), [])
+  const [isPro, setIsPro] = useState<boolean>(initialPro.active)
+  const [upgradeOpen, setUpgradeOpen] = useState(false)
+  const [upgradeReason, setUpgradeReason] = useState<string | undefined>(undefined)
+
+  const setProActive = useCallback((next: boolean) => {
+    setIsPro(next)
+    if (next) {
+      savePro({ active: true, since: new Date().toISOString() })
+      toast.success('Flimas Pro ativado (modo dev). Aproveite!')
+    } else {
+      savePro({ active: false })
+      toast.info('Flimas Pro desativado.')
+    }
+  }, [])
+
+  const openUpgrade = useCallback((reason?: string) => {
+    setUpgradeReason(reason)
+    setUpgradeOpen(true)
+  }, [])
 
   const currentFile = useMemo(
     () => files.find(f => f.id === currentFileId) || null,
@@ -279,6 +307,7 @@ export default function App() {
       } else if (
         target.kind === 'sheet' || target.kind === 'code'
         || target.kind === 'image' || target.kind === 'notes'
+        || target.kind === 'tasks'
       ) {
         if (sheetContentRef.current !== null) content = sheetContentRef.current
       }
@@ -404,14 +433,19 @@ export default function App() {
     sheetContentRef.current = null
     setCurrentFileId(id)
     setDocumentTitle(file.title)
-    setReadOnly(false)
+    // Pro: arquivos Pro abrem em readonly se o usuário não tem o plano
+    const lockedByPlan = isProKind(file.kind) && !isPro
+    setReadOnly(lockedByPlan)
+    if (lockedByPlan) {
+      toast.warning(`Este arquivo é do plano Pro — abrindo em modo somente leitura.`)
+    }
     if (file.kind === 'doc' && editor) {
       editor.commands.setContent(file.content || '')
     }
     setView('editor')
     setSaved(true)
     setLastSaved(null)
-  }, [files, editor, saveCurrent])
+  }, [files, editor, saveCurrent, isPro])
 
   const handleCreateFromTemplate = useCallback((kind: FileKind, title: string, content: string) => {
     const created = newFile(kind, title, content)
@@ -434,10 +468,17 @@ export default function App() {
   }, [editor])
 
   const handleCreate = useCallback((kind: FileKind = 'doc') => {
-    if (kind === 'code' || kind === 'image' || kind === 'notes') {
+    // Paywall: Code e Studio (image) só com Pro
+    if (isProKind(kind) && !canCreateForPlan(kind, isPro)) {
+      const productLabel = kind === 'code' ? 'Flimas Code' : 'Flimas Studio'
+      openUpgrade(`O ${productLabel} faz parte do plano Flimas Pro.`)
+      return
+    }
+    if (kind === 'code' || kind === 'image' || kind === 'notes' || kind === 'tasks') {
       const defaultTitle =
         kind === 'code'  ? 'Código sem título'  :
         kind === 'image' ? 'Imagem sem título'  :
+        kind === 'tasks' ? 'Quadro sem título'  :
                            'Nota sem título'
       const created = newFile(kind, defaultTitle, '')
       setFiles(prev => {
@@ -456,7 +497,7 @@ export default function App() {
       return
     }
     setTemplatePicker(kind)
-  }, [])
+  }, [isPro, openUpgrade])
 
   const handleDelete = useCallback((id: string) => {
     if (!confirm('Tem certeza que deseja excluir este arquivo? Esta ação não pode ser desfeita.')) return
@@ -539,7 +580,7 @@ export default function App() {
       queueMicrotask(() => handleOpen(created.id))
     } catch (err) {
       console.error('Falha ao importar arquivo', err)
-      alert(`Não foi possível importar "${file.name}". O arquivo pode estar corrompido ou em um formato não suportado.`)
+      toast.error(`Não foi possível importar "${file.name}". O arquivo pode estar corrompido ou em um formato não suportado.`)
     }
   }, [handleOpen])
 
@@ -565,6 +606,7 @@ export default function App() {
     } else if (
       snap.kind === 'sheet' || snap.kind === 'code'
       || snap.kind === 'image' || snap.kind === 'notes'
+      || snap.kind === 'tasks'
     ) {
       sheetContentRef.current = snap.content
       // Force remount by briefly clearing + resetting currentFileId
@@ -806,12 +848,14 @@ ${editor.getHTML()}
   const isCode  = currentFile?.kind === 'code'
   const isImage = currentFile?.kind === 'image'
   const isNotes = currentFile?.kind === 'notes'
+  const isTasks = currentFile?.kind === 'tasks'
 
   const brandLogo =
     isSheet ? logoSheet :
     isCode  ? logoCode  :
     isImage ? logoStudio :
     isNotes ? logoNotes :
+    isTasks ? logoTasks :
     logoDoc
 
   const brandLabel =
@@ -819,6 +863,7 @@ ${editor.getHTML()}
     isCode  ? 'Flimas Code'   :
     isImage ? 'Flimas Studio' :
     isNotes ? 'Flimas Notes'  :
+    isTasks ? 'Flimas Tasks'  :
     'Flimas Docs'
 
   const brandSubtitle =
@@ -826,6 +871,7 @@ ${editor.getHTML()}
     isCode  ? 'Código'   :
     isImage ? 'Imagem'   :
     isNotes ? 'Anotação' :
+    isTasks ? 'Quadro'   :
     'Documento'
 
   const brandAccent =
@@ -833,6 +879,7 @@ ${editor.getHTML()}
     isCode  ? 'text-sky-600'     :
     isImage ? 'text-pink-500'    :
     isNotes ? 'text-amber-500'   :
+    isTasks ? 'text-blue-600'    :
     'text-violet-500'
 
   return (
