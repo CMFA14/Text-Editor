@@ -376,6 +376,15 @@ body {
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
+/* Quando o menu de "..." está aberto, congela o card pra evitar shake e mantém destaque */
+.doc-card.menu-active,
+.doc-card.menu-active:hover {
+  transform: none;
+  border-color: var(--primary);
+  box-shadow: 0 10px 20px -10px rgba(0, 0, 0, 0.15);
+}
+.doc-card.menu-active::before { opacity: 1; }
+
 .doc-card::before {
   content: '';
   position: absolute;
@@ -499,3 +508,93 @@ body.reduced-motion *::after {
   transition-duration: 0s !important;
   transition-delay: 0s !important;
 }
+
+/* ─── Flimas Notes preview ───────────────────────── */
+.notes-preview ul,
+.notes-preview ol {
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+.notes-preview ul { list-style: disc; }
+.notes-preview ol { list-style: decimal; }
+.notes-preview li { margin: 0.25rem 0; }
+
+/* GFM task list itens */
+.notes-preview li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.25rem;
+}
+.notes-preview .md-task-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 1.5px solid #f59e0b;
+  border-radius: 4px;
+  margin-right: 0.5rem;
+  vertical-align: -3px;
+  cursor: pointer;
+  display: inline-block;
+  background: transparent;
+  transition: background 120ms, border-color 120ms;
+}
+.notes-preview .md-task-checkbox:hover {
+  border-color: #b45309;
+  background: rgba(245, 158, 11, 0.08);
+}
+.notes-preview .md-task-checkbox:checked {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='white'><path d='M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 1 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 80% 80%;
+}
+[data-theme='dark'] .notes-preview .md-task-checkbox {
+  border-color: #fbbf24;
+}
+[data-theme='dark'] .notes-preview .md-task-checkbox:checked {
+  background-color: #fbbf24;
+  border-color: #fbbf24;
+}
+.notes-preview h1, .notes-preview h2, .notes-preview h3 {
+  font-weight: 800;
+  line-height: 1.25;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+.notes-preview h1 { font-size: 1.875rem; }
+.notes-preview h2 { font-size: 1.5rem; }
+.notes-preview h3 { font-size: 1.25rem; }
+.notes-preview p { margin: 0.5rem 0; line-height: 1.6; }
+.notes-preview code {
+  background: rgba(245, 158, 11, 0.12);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+.notes-preview pre {
+  background: var(--bg-ui);
+  border: 1px solid var(--border-light);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.notes-preview blockquote {
+  border-left: 3px solid #f59e0b;
+  padding-left: 1rem;
+  color: var(--muted);
+  margin: 0.5rem 0;
+  font-style: italic;
+}
+.notes-preview hr {
+  border: none;
+  border-top: 1px dashed var(--border-light);
+  margin: 1.25rem 0;
+}
+.notes-preview a {
+  color: #b45309;
+  text-decoration: underline;
+  text-decoration-color: rgba(245, 158, 11, 0.4);
+}
+[data-theme='dark'] .notes-preview a { color: #fbbf24; }

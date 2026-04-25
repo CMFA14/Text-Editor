@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
-import { X, Sun, Moon, Monitor, Sparkles, Trash2, Info } from 'lucide-react'
+import { X, Sun, Moon, Monitor, Sparkles, Trash2, Info, Crown } from 'lucide-react'
 import flimasLogo from '../assets/flimas-logo.svg'
+import ProBadge from './ProBadge'
+import { PRO_PRICE_LABEL } from '../pro'
 
 export type ThemePreference = 'light' | 'dark' | 'system'
 export type DensityPreference = 'compact' | 'comfortable'
@@ -20,6 +22,10 @@ interface SettingsModalProps {
 
   onClearAllData: () => void
   filesCount: number
+
+  isPro: boolean
+  onTogglePro: (next: boolean) => void
+  onOpenUpgrade: () => void
 }
 
 export default function SettingsModal(p: SettingsModalProps) {
@@ -56,6 +62,62 @@ export default function SettingsModal(p: SettingsModalProps) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8">
+          {/* Plano */}
+          <section>
+            <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-3 flex items-center gap-2">
+              Plano
+              {p.isPro && <ProBadge size="xs" />}
+            </h3>
+            <div className={`p-4 rounded-xl border ${p.isPro
+              ? 'border-amber-300 dark:border-amber-700/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20'
+              : 'border-[var(--border-light)] bg-[var(--bg-ui)]/30'}`}
+            >
+              <div className="flex items-start gap-3">
+                <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${p.isPro
+                  ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-md shadow-amber-500/30'
+                  : 'bg-slate-200 dark:bg-slate-700 text-slate-500'}`}
+                >
+                  <Crown size={18} strokeWidth={2.5} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                      {p.isPro ? 'Flimas Pro ativo' : 'Plano gratuito'}
+                    </h4>
+                    {p.isPro && <ProBadge size="xs" />}
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 leading-snug">
+                    {p.isPro
+                      ? `Você tem acesso ao Flimas Code, Studio e suporte prioritário. ${PRO_PRICE_LABEL}.`
+                      : `Desbloqueie o Flimas Code e o Flimas Studio por ${PRO_PRICE_LABEL}.`}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                <button
+                  onClick={p.onOpenUpgrade}
+                  className={`flex-1 px-4 py-2 rounded-xl text-sm font-extrabold transition-all ${p.isPro
+                    ? 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-[var(--border-light)] hover:border-[var(--primary)]'
+                    : 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white shadow-md shadow-orange-500/20 active:scale-95 flex items-center justify-center gap-2'}`}
+                >
+                  {p.isPro ? 'Ver detalhes do plano' : (
+                    <>
+                      <Crown size={14} strokeWidth={2.5} />
+                      Conhecer o Pro
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => p.onTogglePro(!p.isPro)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border border-dashed border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-[var(--bg-ui-hover)] transition-colors"
+                  title="Ativa/desativa o Pro localmente, sem cobrança real (modo desenvolvimento)."
+                >
+                  {p.isPro ? 'Desativar (dev)' : 'Ativar (modo dev)'}
+                </button>
+              </div>
+            </div>
+          </section>
+
           {/* Tema */}
           <section>
             <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-3">
