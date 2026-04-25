@@ -805,8 +805,25 @@ ${editor.getHTML()}
       onReducedMotionChange={setReducedMotion}
       onClearAllData={handleClearAllData}
       filesCount={files.length}
+      isPro={isPro}
+      onTogglePro={setProActive}
+      onOpenUpgrade={() => { setSettingsOpen(false); openUpgrade() }}
     />
   )
+
+  const upgradeNode = (
+    <UpgradeModal
+      open={upgradeOpen}
+      onClose={() => setUpgradeOpen(false)}
+      isPro={isPro}
+      onActivateDev={() => setProActive(true)}
+      onCancelDev={() => setProActive(false)}
+      reason={upgradeReason}
+    />
+  )
+
+  const toastHostNode = <ToastHost />
+
 
   if (view === 'home') {
     return (
@@ -817,9 +834,13 @@ ${editor.getHTML()}
           onOpenFiles={() => setView('dashboard')}
           onOpenFile={handleOpen}
           onOpenSettings={() => setSettingsOpen(true)}
+          isPro={isPro}
+          onOpenUpgrade={() => openUpgrade()}
         />
         {templateNode}
         {settingsNode}
+        {upgradeNode}
+        {toastHostNode}
       </ErrorBoundary>
     )
   }
@@ -837,9 +858,13 @@ ${editor.getHTML()}
           onToggleTheme={handleToggleTheme}
           onGoHome={() => setView('home')}
           onOpenSettings={() => setSettingsOpen(true)}
+          isPro={isPro}
+          onOpenUpgrade={() => openUpgrade()}
         />
         {templateNode}
         {settingsNode}
+        {upgradeNode}
+        {toastHostNode}
       </ErrorBoundary>
     )
   }
@@ -1050,7 +1075,7 @@ ${editor.getHTML()}
              🕓
            </button>
 
-           {!isSheet && !isCode && !isImage && !isNotes && (
+           {!isSheet && !isCode && !isImage && !isNotes && !isTasks && (
              <button
                onClick={handleExportPDF}
                className="hidden md:flex px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white transition-colors"
@@ -1061,7 +1086,7 @@ ${editor.getHTML()}
              </button>
            )}
 
-           {!isImage && !isSheet && !isCode && !isNotes && (
+           {!isImage && !isSheet && !isCode && !isNotes && !isTasks && (
              <button
                onClick={() => window.print()}
                className="hidden md:flex w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-violet-600 items-center justify-center transition-colors"
@@ -1183,6 +1208,26 @@ ${editor.getHTML()}
             }}
           />
         </Suspense>
+      ) : isTasks && currentFile ? (
+        <Suspense fallback={
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <img src={logoTasks} alt="" className="w-16 h-16 mb-3 mx-auto animate-pulse" />
+              <p className="text-slate-500 dark:text-slate-400 font-semibold">Carregando Flimas Tasks…</p>
+            </div>
+          </div>
+        }>
+          <TasksEditor
+            fileId={currentFile.id}
+            initialContent={currentFile.content}
+            darkMode={darkMode}
+            readOnly={readOnly}
+            onChange={(json) => {
+              sheetContentRef.current = json
+              setSaved(false)
+            }}
+          />
+        </Suspense>
       ) : (
         <>
           <MenuBar
@@ -1276,6 +1321,8 @@ ${editor.getHTML()}
       )}
 
       {settingsNode}
+      {upgradeNode}
+      {toastHostNode}
     </div>
     </ErrorBoundary>
   )

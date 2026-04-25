@@ -3,6 +3,7 @@ import * as fabric from 'fabric'
 import CanvasArea from './CanvasArea'
 import Toolbar from './Toolbar'
 import PropertiesPanel from './PropertiesPanel'
+import { toast } from '../Toast'
 
 // ── Tipos ─────────────────────────────────────────────────
 export type FlimasTool =
@@ -632,7 +633,7 @@ export default function FlimasEditor({
       a.click()
     } catch (err) {
       console.error('Falha ao exportar', err)
-      alert('Não foi possível exportar. Veja o console.')
+      toast.error('Não foi possível exportar. Veja o console.')
     } finally {
       if (vpt) c.setViewportTransform(vpt as fabric.TMat2D)
     }

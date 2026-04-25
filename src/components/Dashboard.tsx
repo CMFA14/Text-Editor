@@ -1,14 +1,17 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { FileEntry, FileKind } from '../types'
+import { isProKind } from '../types'
 import flimasLogo from '../assets/flimas-logo.svg'
 import logoDoc from '../assets/logo-doc.svg'
 import logoSheet from '../assets/logo-sheet.svg'
 import logoCode from '../assets/logo-flimasCode.png'
 import logoStudio from '../assets/logo-flimasStudio.png'
 import logoNotes from '../assets/logo-flimasNotes.svg'
-import { Image as ImageIcon, StickyNote, MoreHorizontal, Download, Trash2, Settings as SettingsIcon, Home } from 'lucide-react'
+import logoTasks from '../assets/logo-flimasTasks.svg'
+import { Image as ImageIcon, StickyNote, KanbanSquare, MoreHorizontal, Download, Trash2, Settings as SettingsIcon, Home, Search, X as XIcon, Lock, Crown } from 'lucide-react'
 import { getDownloadOptions } from '../utils/download'
+import ProBadge from './ProBadge'
 
 interface DashboardProps {
   files: FileEntry[]
@@ -20,9 +23,11 @@ interface DashboardProps {
   onToggleTheme: () => void
   onGoHome?: () => void
   onOpenSettings?: () => void
+  isPro: boolean
+  onOpenUpgrade: () => void
 }
 
-type FilterKind = 'all' | 'doc' | 'sheet' | 'code' | 'image' | 'notes'
+type FilterKind = 'all' | 'doc' | 'sheet' | 'code' | 'image' | 'notes' | 'tasks'
 
 const Icons = {
   Plus: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
@@ -34,7 +39,7 @@ const Icons = {
 
 // ── Sidebar item ─────────────────────────────────────
 function SideNav({
-  icon, label, active, disabled, badge, onClick, accent,
+  icon, label, active, disabled, badge, onClick, accent, pro,
 }: {
   icon: React.ReactNode
   label: string
@@ -43,6 +48,7 @@ function SideNav({
   badge?: string
   onClick?: () => void
   accent?: string
+  pro?: boolean
 }) {
   return (
     <button
@@ -60,6 +66,7 @@ function SideNav({
         {icon}
       </span>
       <span className="flex-1 truncate">{label}</span>
+      {pro && <ProBadge size="xs" />}
       {badge && (
         <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400">
           {badge}
@@ -71,10 +78,11 @@ function SideNav({
 
 export default function Dashboard({
   files, onOpen, onCreate, onDelete, onImport, darkMode, onToggleTheme,
-  onGoHome, onOpenSettings,
+  onGoHome, onOpenSettings, isPro, onOpenUpgrade,
 }: DashboardProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [filter, setFilter] = useState<FilterKind>('all')
+  const [search, setSearch] = useState('')
   const [showCreateMenu, setShowCreateMenu] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
@@ -136,9 +144,11 @@ export default function Dashboard({
 
   const visibleFiles = useMemo(() => {
     const sorted = [...files].sort((a, b) => b.lastModified - a.lastModified)
-    if (filter === 'all') return sorted
-    return sorted.filter(f => f.kind === filter)
-  }, [files, filter])
+    const byKind = filter === 'all' ? sorted : sorted.filter(f => f.kind === filter)
+    const q = search.trim().toLowerCase()
+    if (!q) return byKind
+    return byKind.filter(f => (f.title || '').toLowerCase().includes(q))
+  }, [files, filter, search])
 
   const counts = useMemo(() => ({
     all: files.length,
@@ -147,6 +157,7 @@ export default function Dashboard({
     code: files.filter(f => f.kind === 'code').length,
     image: files.filter(f => f.kind === 'image').length,
     notes: files.filter(f => f.kind === 'notes').length,
+    tasks: files.filter(f => f.kind === 'tasks').length,
   }), [files])
 
   const handleCreateClick = (kind: FileKind) => {
@@ -160,6 +171,7 @@ export default function Dashboard({
     filter === 'code'  ? 'Flimas Code' :
     filter === 'image' ? 'Flimas Studio' :
     filter === 'notes' ? 'Flimas Notes' :
+    filter === 'tasks' ? 'Flimas Tasks' :
     'Meus Arquivos'
 
   const headerSubtitle =
@@ -168,7 +180,8 @@ export default function Dashboard({
     filter === 'code'  ? 'Edite, rode e compartilhe trechos de código.' :
     filter === 'image' ? 'Edição avançada de imagens.' :
     filter === 'notes' ? 'Anotações rápidas em Markdown.' :
-    'Documentos, planilhas, códigos, imagens e notas em um só lugar.'
+    filter === 'tasks' ? 'Quadros Kanban para organizar tudo.' :
+    'Documentos, planilhas, códigos, imagens, notas e quadros — tudo num só lugar.'
 
   return (
     <div className="min-h-screen bg-[var(--bg-app)] transition-colors duration-500 flex">
@@ -223,6 +236,7 @@ export default function Dashboard({
             label={`Flimas Code (${counts.code})`}
             active={filter === 'code'}
             onClick={() => setFilter('code')}
+            pro={!isPro}
           />
 
           <SideNav
@@ -230,6 +244,7 @@ export default function Dashboard({
             label={`Flimas Studio (${counts.image})`}
             active={filter === 'image'}
             onClick={() => setFilter('image')}
+            pro={!isPro}
           />
 
           <SideNav
@@ -238,10 +253,46 @@ export default function Dashboard({
             active={filter === 'notes'}
             onClick={() => setFilter('notes')}
           />
+
+          <SideNav
+            icon={<img src={logoTasks} alt="" className="w-5 h-5" />}
+            label={`Flimas Tasks (${counts.tasks})`}
+            active={filter === 'tasks'}
+            onClick={() => setFilter('tasks')}
+          />
         </nav>
 
         {/* Footer */}
         <div className="px-3 py-4 border-t border-[var(--border-light)] space-y-1">
+          {!isPro && (
+            <button
+              onClick={onOpenUpgrade}
+              className="w-full mb-2 group flex items-center gap-3 p-3 rounded-xl text-left transition-all bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 border border-amber-200 dark:border-amber-800/50 hover:border-amber-400"
+            >
+              <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-amber-500/30">
+                <Crown size={16} strokeWidth={2.5} />
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-extrabold uppercase tracking-widest text-amber-700 dark:text-amber-300">Flimas Pro</div>
+                <div className="text-xs font-bold text-slate-800 dark:text-slate-100 leading-tight mt-0.5">Desbloqueie Code & Studio</div>
+              </div>
+            </button>
+          )}
+          {isPro && (
+            <button
+              onClick={onOpenUpgrade}
+              className="w-full mb-2 flex items-center gap-3 p-2.5 rounded-xl text-left bg-amber-100/40 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/40"
+              title="Você é assinante Flimas Pro"
+            >
+              <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                <Crown size={14} strokeWidth={2.5} />
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-extrabold uppercase tracking-widest text-amber-700 dark:text-amber-300">Flimas Pro</div>
+                <div className="text-[11px] font-bold text-slate-700 dark:text-slate-200 leading-tight mt-0.5">Plano ativo</div>
+              </div>
+            </button>
+          )}
           {onGoHome && (
             <button
               onClick={onGoHome}
@@ -299,7 +350,7 @@ export default function Dashboard({
         <main className="flex-1 px-6 md:px-10 py-8">
 
           {/* Page header */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-6">
             <div>
               <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight mb-2 bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">
                 {headerTitle}
@@ -359,8 +410,11 @@ export default function Dashboard({
                         role="menuitem"
                       >
                         <img src={logoCode} alt="" className="w-6 h-6" />
-                        <div>
-                          <div>Novo Código</div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-1.5">
+                            Novo Código
+                            {!isPro && <ProBadge size="xs" />}
+                          </div>
                           <div className="text-[11px] font-medium text-slate-500">Flimas Code</div>
                         </div>
                       </button>
@@ -370,8 +424,11 @@ export default function Dashboard({
                         role="menuitem"
                       >
                         <img src={logoStudio} alt="" className="w-6 h-6 rounded-md shadow-sm" />
-                        <div>
-                          <div>Nova Imagem</div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-1.5">
+                            Nova Imagem
+                            {!isPro && <ProBadge size="xs" />}
+                          </div>
                           <div className="text-[11px] font-medium text-slate-500">Flimas Studio</div>
                         </div>
                       </button>
@@ -386,6 +443,17 @@ export default function Dashboard({
                           <div className="text-[11px] font-medium text-slate-500">Flimas Notes</div>
                         </div>
                       </button>
+                      <button
+                        onClick={() => handleCreateClick('tasks')}
+                        className="w-full px-4 py-3 flex items-center gap-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[var(--primary-light)] dark:hover:bg-slate-700 transition-colors border-t border-[var(--border-light)]"
+                        role="menuitem"
+                      >
+                        <img src={logoTasks} alt="" className="w-6 h-6" />
+                        <div>
+                          <div>Novo Quadro</div>
+                          <div className="text-[11px] font-medium text-slate-500">Flimas Tasks</div>
+                        </div>
+                      </button>
                     </div>
                   </>
                 )}
@@ -394,10 +462,41 @@ export default function Dashboard({
                 type="file"
                 ref={fileInputRef}
                 className="hidden"
-                accept=".html,.htm,.md,.markdown,.txt,.xlsx,.xls,.csv,.js,.ts,.tsx,.jsx,.py,.css,.json,.sql"
+                accept=".html,.htm,.md,.markdown,.txt,.xlsx,.xls,.csv,.js,.ts,.tsx,.jsx,.py,.css,.json,.sql,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg"
                 onChange={handleFileChange}
               />
             </div>
+          </div>
+
+          {/* Search bar */}
+          <div className="mb-6 flex items-center gap-3">
+            <div className="relative flex-1 max-w-xl">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none">
+                <Search size={16} />
+              </span>
+              <input
+                type="search"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Buscar por nome…"
+                className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-[var(--bg-page)] border border-[var(--border-light)] focus:border-[var(--primary)] focus:outline-none focus:ring-4 ring-violet-500/10 text-sm font-semibold text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-colors"
+                aria-label="Buscar arquivo pelo nome"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  aria-label="Limpar busca"
+                >
+                  <XIcon size={14} />
+                </button>
+              )}
+            </div>
+            {search && (
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                {visibleFiles.length} {visibleFiles.length === 1 ? 'resultado' : 'resultados'}
+              </span>
+            )}
           </div>
 
           {/* Grid */}
@@ -417,14 +516,16 @@ export default function Dashboard({
             )}
 
             {(filter === 'all' || filter === 'code') && (
-              <button onClick={() => handleCreateClick('code')} className="action-card group">
+              <button onClick={() => handleCreateClick('code')} className="action-card group relative">
+                {!isPro && <span className="absolute top-2 right-2"><ProBadge size="xs" /></span>}
                 <img src={logoCode} alt="" className="w-14 h-14 rounded-2xl shadow-md group-hover:scale-110 transition-transform" />
                 <span className="action-card-text">Novo Código</span>
               </button>
             )}
 
             {(filter === 'all' || filter === 'image') && (
-              <button onClick={() => handleCreateClick('image')} className="action-card group">
+              <button onClick={() => handleCreateClick('image')} className="action-card group relative">
+                {!isPro && <span className="absolute top-2 right-2"><ProBadge size="xs" /></span>}
                 <img src={logoStudio} alt="" className="w-14 h-14 rounded-2xl shadow-md group-hover:scale-110 transition-transform" />
                 <span className="action-card-text">Nova Imagem</span>
               </button>
@@ -434,6 +535,13 @@ export default function Dashboard({
               <button onClick={() => handleCreateClick('notes')} className="action-card group">
                 <img src={logoNotes} alt="" className="w-14 h-14 group-hover:scale-110 transition-transform" />
                 <span className="action-card-text">Nova Nota</span>
+              </button>
+            )}
+
+            {(filter === 'all' || filter === 'tasks') && (
+              <button onClick={() => handleCreateClick('tasks')} className="action-card group">
+                <img src={logoTasks} alt="" className="w-14 h-14 group-hover:scale-110 transition-transform" />
+                <span className="action-card-text">Novo Quadro</span>
               </button>
             )}
 
@@ -450,21 +558,30 @@ export default function Dashboard({
                 file.kind === 'code'  ? logoCode  :
                 file.kind === 'image' ? logoStudio :
                 file.kind === 'notes' ? logoNotes :
+                file.kind === 'tasks' ? logoTasks :
                 logoDoc
               const fileKindLabel =
                 file.kind === 'sheet' ? 'Planilha' :
                 file.kind === 'code'  ? 'Código'   :
                 file.kind === 'image' ? 'Imagem'   :
                 file.kind === 'notes' ? 'Nota'     :
+                file.kind === 'tasks' ? 'Quadro'   :
                 'Documento'
               const isMenuOpen = menuOpenId === file.id
+              const lockedByPlan = isProKind(file.kind) && !isPro
               return (
               <div
                 key={file.id}
                 className={`doc-card relative ${isMenuOpen ? 'menu-active' : ''}`}
                 onClick={() => onOpen(file.id)}
+                title={lockedByPlan ? 'Arquivo Pro — abrirá em modo somente leitura' : undefined}
               >
-                <img src={fileLogo} alt="" className="w-12 h-12 rounded-xl shadow-sm" />
+                {lockedByPlan && (
+                  <span className="absolute top-2 right-10 inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-widest px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                    <Lock size={9} strokeWidth={3} /> PRO
+                  </span>
+                )}
+                <img src={fileLogo} alt="" className={`w-12 h-12 rounded-xl shadow-sm ${lockedByPlan ? 'opacity-70' : ''}`} />
                 <div className="flex-1 min-w-0">
                   <h3 className="doc-card-title truncate" title={file.title}>
                     {file.title || 'Sem título'}
@@ -567,19 +684,25 @@ export default function Dashboard({
                 <div className="w-20 h-20 mb-4 rounded-xl flex items-center justify-center text-amber-500 bg-amber-100/50 dark:bg-amber-900/30">
                   <StickyNote size={48} />
                 </div>
+              ) : filter === 'tasks' ? (
+                <div className="w-20 h-20 mb-4 rounded-xl flex items-center justify-center text-blue-500 bg-blue-100/50 dark:bg-blue-900/30">
+                  <KanbanSquare size={48} />
+                </div>
               ) : (
                 <div className="text-6xl mb-4">📂</div>
               )}
               <h3 className="text-xl font-bold">
-                {filter === 'all'   ? 'Nenhum arquivo ainda'    :
+                {search          ? `Nenhum resultado para "${search}"` :
+                 filter === 'all'   ? 'Nenhum arquivo ainda'    :
                  filter === 'doc'   ? 'Nenhum documento ainda'  :
                  filter === 'sheet' ? 'Nenhuma planilha ainda'  :
                  filter === 'image' ? 'Nenhuma imagem ainda'    :
                  filter === 'notes' ? 'Nenhuma nota ainda'      :
+                 filter === 'tasks' ? 'Nenhum quadro ainda'     :
                                       'Nenhum código ainda'}
               </h3>
               <p className="max-w-xs mt-2 text-slate-500 dark:text-slate-400">
-                Comece criando um novo arquivo ou importando um existente.
+                {search ? 'Tente outro nome ou limpe a busca.' : 'Comece criando um novo arquivo ou importando um existente.'}
               </p>
             </div>
           )}
