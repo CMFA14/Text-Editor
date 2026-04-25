@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Editor } from '@tiptap/react'
 import { isSafeUrl } from '../utils/sanitize'
+import { toast } from './Toast'
 
 interface MenuBarProps {
   editor: Editor | null
@@ -207,7 +208,7 @@ export default function MenuBar({
     if (!linkUrl) {
       editor.chain().focus().unsetLink().run()
     } else if (!isSafeUrl(linkUrl)) {
-      alert('URL inválida. Use http://, https:// ou mailto:')
+      toast.warning('URL inválida. Use http://, https:// ou mailto:')
       return
     } else {
       editor.chain().focus().setLink({ href: linkUrl.trim(), target: '_blank' }).run()
@@ -219,7 +220,7 @@ export default function MenuBar({
   const applyImage = () => {
     if (!imageUrl) return
     if (!isSafeUrl(imageUrl)) {
-      alert('URL de imagem inválida. Use http:// ou https://')
+      toast.warning('URL de imagem inválida. Use http:// ou https://')
       return
     }
     editor.chain().focus().setImage({ src: imageUrl.trim() }).run()

@@ -1,4 +1,5 @@
 import type { FileEntry, CodeLanguage, TasksDoc } from '../types'
+import { toast } from '../components/Toast'
 
 /**
  * Helpers para download direto a partir da Dashboard (sem abrir o editor).
@@ -418,7 +419,7 @@ export function getDownloadOptions(file: FileEntry): DownloadOption[] {
           const { rasterizeFlimasImage, downloadDataUrl } = await import('./imageExport')
           const url = await rasterizeFlimasImage(file.content || '', 'png', 1)
           if (url) downloadDataUrl(url, safeName(t, 'png'))
-          else alert('Esta imagem ainda não tem conteúdo salvo. Abra no Flimas Studio primeiro.')
+          else toast.warning('Esta imagem ainda não tem conteúdo salvo. Abra no Flimas Studio primeiro.')
         },
       },
       {
@@ -430,7 +431,7 @@ export function getDownloadOptions(file: FileEntry): DownloadOption[] {
           const { rasterizeFlimasImage, downloadDataUrl } = await import('./imageExport')
           const url = await rasterizeFlimasImage(file.content || '', 'jpeg', 0.92)
           if (url) downloadDataUrl(url, safeName(t, 'jpg'))
-          else alert('Esta imagem ainda não tem conteúdo salvo. Abra no Flimas Studio primeiro.')
+          else toast.warning('Esta imagem ainda não tem conteúdo salvo. Abra no Flimas Studio primeiro.')
         },
       },
       {
