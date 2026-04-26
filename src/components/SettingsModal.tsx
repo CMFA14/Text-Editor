@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
-import { X, Sun, Moon, Monitor, Sparkles, Trash2, Info, Crown } from 'lucide-react'
+import { X, Sun, Moon, Monitor, Sparkles, Trash2, Info, Crown, ShieldCheck, LogOut, User as UserIcon, AtSign } from 'lucide-react'
 import flimasLogo from '../assets/flimas-logo.svg'
 import ProBadge from './ProBadge'
 import { PRO_PRICE_LABEL } from '../pro'
+import type { User } from '../auth'
 
 export type ThemePreference = 'light' | 'dark' | 'system'
 export type DensityPreference = 'compact' | 'comfortable'
@@ -26,6 +27,11 @@ interface SettingsModalProps {
   isPro: boolean
   onTogglePro: (next: boolean) => void
   onOpenUpgrade: () => void
+
+  /** Usuário autenticado atualmente. */
+  currentUser: User | null
+  onLogout: () => void
+  onOpenAdmin: () => void
 }
 
 export default function SettingsModal(p: SettingsModalProps) {
@@ -62,6 +68,61 @@ export default function SettingsModal(p: SettingsModalProps) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8">
+          {/* Conta */}
+          {p.currentUser && (
+            <section>
+              <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-3 flex items-center gap-2">
+                Conta
+                {p.currentUser.isAdmin && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-600 text-white normal-case">
+                    <ShieldCheck size={10} /> Admin
+                  </span>
+                )}
+              </h3>
+              <div className="p-4 rounded-xl border border-[var(--border-light)] bg-[var(--bg-ui)]/30">
+                <div className="flex items-start gap-3">
+                  <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-extrabold text-white text-sm ${p.currentUser.isAdmin
+                    ? 'bg-gradient-to-br from-violet-600 to-pink-500'
+                    : 'bg-gradient-to-br from-slate-400 to-slate-600'}`}
+                  >
+                    {(p.currentUser.displayName || p.currentUser.username).slice(0, 1).toUpperCase()}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">{p.currentUser.displayName}</h4>
+                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex-wrap">
+                      <span className="inline-flex items-center gap-1"><UserIcon size={10} /> @{p.currentUser.username}</span>
+                      {p.currentUser.email && (
+                        <span className="inline-flex items-center gap-1"><AtSign size={10} /> {p.currentUser.email}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                  {p.currentUser.isAdmin && (
+                    <button
+                      onClick={p.onOpenAdmin}
+                      className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-pink-500 hover:from-violet-700 hover:to-pink-600 text-white text-sm font-extrabold shadow-md shadow-violet-500/20 active:scale-95 transition-all"
+                    >
+                      <ShieldCheck size={14} strokeWidth={2.5} />
+                      Painel Admin
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (confirm('Sair da conta? Você precisará fazer login novamente para acessar seus arquivos.')) {
+                        p.onLogout()
+                      }
+                    }}
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-[var(--border-light)] text-slate-700 dark:text-slate-200 text-sm font-bold hover:bg-[var(--bg-ui-hover)] transition-colors"
+                  >
+                    <LogOut size={14} strokeWidth={2.5} />
+                    Sair da conta
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
+
           {/* Plano */}
           <section>
             <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-3 flex items-center gap-2">
@@ -207,7 +268,7 @@ export default function SettingsModal(p: SettingsModalProps) {
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 pl-6">
-                Tudo fica em <code className="px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-[11px] font-mono">localStorage</code>. Nenhum dado é enviado para servidores.
+                Tudo fica em <code className="px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-[11px] font-mono">localStorage</code> separado por usuário. Nenhum dado é enviado para servidores.
               </p>
             </div>
 

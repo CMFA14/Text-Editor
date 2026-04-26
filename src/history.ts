@@ -1,4 +1,5 @@
 import type { FileKind } from './types'
+import { userKey } from './auth'
 
 const HISTORY_PREFIX = 'editor_history_'
 const MAX_VERSIONS = 10
@@ -10,12 +11,12 @@ export interface Snapshot {
   kind: FileKind
 }
 
-function key(id: string): string {
-  return `${HISTORY_PREFIX}${id}`
+function key(userId: string, fileId: string): string {
+  return userKey(userId, `${HISTORY_PREFIX}${fileId}`)
 }
 
-export function loadHistory(fileId: string): Snapshot[] {
-  const raw = localStorage.getItem(key(fileId))
+export function loadHistory(userId: string, fileId: string): Snapshot[] {
+  const raw = localStorage.getItem(key(userId, fileId))
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw) as Snapshot[]
@@ -26,19 +27,19 @@ export function loadHistory(fileId: string): Snapshot[] {
   return []
 }
 
-export function pushSnapshot(fileId: string, snap: Snapshot): Snapshot[] {
-  const list = loadHistory(fileId)
+export function pushSnapshot(userId: string, fileId: string, snap: Snapshot): Snapshot[] {
+  const list = loadHistory(userId, fileId)
   const last = list[0]
   if (last && last.content === snap.content && last.title === snap.title) return list
   const next = [snap, ...list].slice(0, MAX_VERSIONS)
   try {
-    localStorage.setItem(key(fileId), JSON.stringify(next))
+    localStorage.setItem(key(userId, fileId), JSON.stringify(next))
   } catch (err) {
     console.error('Falha ao gravar histórico', err)
   }
   return next
 }
 
-export function clearHistory(fileId: string): void {
-  localStorage.removeItem(key(fileId))
+export function clearHistory(userId: string, fileId: string): void {
+  localStorage.removeItem(key(userId, fileId))
 }
