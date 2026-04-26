@@ -5,7 +5,13 @@ import { sanitizeHtml } from './utils/sanitize'
 import { loadFiles, saveFiles, newFile } from './storage'
 import type { FileEntry, FileKind } from './types'
 import { isProKind } from './types'
-import { loadPro, savePro, canCreate as canCreateForPlan } from './pro'
+import { canCreate as canCreateForPlan } from './pro'
+import {
+  getCurrentUser,
+  setUserPro as setAuthUserPro,
+  logout as authLogout,
+  type User as AuthUser,
+} from './auth'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import TextAlign from '@tiptap/extension-text-align'
@@ -42,6 +48,8 @@ import VersionHistory from './components/VersionHistory'
 import HomeLanding from './components/HomeLanding'
 import SettingsModal, { type ThemePreference, type DensityPreference } from './components/SettingsModal'
 import UpgradeModal from './components/UpgradeModal'
+import AuthScreen from './components/AuthScreen'
+import AdminPage from './components/AdminPage'
 import { ToastHost, toast } from './components/Toast'
 import { pushSnapshot, type Snapshot } from './history'
 
@@ -157,7 +165,10 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 export default function App() {
-  const [view, setView] = useState<'home' | 'dashboard' | 'editor'>('home')
+  // Auth state — controla se mostra AuthScreen ou o app normal
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getCurrentUser())
+
+  const [view, setView] = useState<'home' | 'dashboard' | 'editor' | 'admin'>('home')
   const [files, setFiles] = useState<FileEntry[]>([])
   const [currentFileId, setCurrentFileId] = useState<string | null>(null)
   const [showFind, setShowFind] = useState(false)
@@ -179,22 +190,22 @@ export default function App() {
   const [density, setDensity] = useState<DensityPreference>(initialSettings.density)
   const [reducedMotion, setReducedMotion] = useState<boolean>(initialSettings.reducedMotion)
 
-  // Pro plan state (persistido em localStorage)
-  const initialPro = useMemo(() => loadPro(), [])
-  const [isPro, setIsPro] = useState<boolean>(initialPro.active)
+  // Pro plan derivado do usuário atual
+  const isPro = !!currentUser?.isPro
   const [upgradeOpen, setUpgradeOpen] = useState(false)
   const [upgradeReason, setUpgradeReason] = useState<string | undefined>(undefined)
 
-  const setProActive = useCallback((next: boolean) => {
-    setIsPro(next)
-    if (next) {
-      savePro({ active: true, since: new Date().toISOString() })
-      toast.success('Flimas Pro ativado (modo dev). Aproveite!')
-    } else {
-      savePro({ active: false })
-      toast.info('Flimas Pro desativado.')
-    }
+  const refreshCurrentUser = useCallback(() => {
+    setCurrentUser(getCurrentUser())
   }, [])
+
+  const setProActive = useCallback((next: boolean) => {
+    if (!currentUser) return
+    setAuthUserPro(currentUser.id, next, 'self')
+    refreshCurrentUser()
+    if (next) toast.success('Flimas Pro ativado (modo dev). Aproveite!')
+    else toast.info('Flimas Pro desativado.')
+  }, [currentUser, refreshCurrentUser])
 
   const openUpgrade = useCallback((reason?: string) => {
     setUpgradeReason(reason)
@@ -281,10 +292,47 @@ export default function App() {
     },
   })
 
-  // Load files + migrate legacy storage
+  // Load files do usuário atual (também faz migração legacy quando aplicável)
   useEffect(() => {
-    setFiles(loadFiles())
+    if (!currentUser) {
+      setFiles([])
+      return
+    }
+    setFiles(loadFiles(currentUser.id))
+  }, [currentUser])
+
+  const handleAuthSuccess = useCallback((user: AuthUser) => {
+    setCurrentUser(user)
+    setView('home')
+    toast.success(`Bem-vindo, ${user.displayName}!`)
   }, [])
+
+  const handleLogout = useCallback(() => {
+    authLogout()
+    setCurrentUser(null)
+    setFiles([])
+    setCurrentFileId(null)
+    setView('home')
+    setSettingsOpen(false)
+    toast.info('Você saiu da conta.')
+  }, [])
+
+  // Guard: se não é admin mas está na view 'admin', redireciona pra home
+  useEffect(() => {
+    if (view === 'admin' && currentUser && !currentUser.isAdmin) {
+      toast.error('Acesso restrito ao admin.')
+      setView('home')
+    }
+  }, [view, currentUser])
+
+  const handleOpenAdmin = useCallback(() => {
+    if (!currentUser?.isAdmin) {
+      toast.error('Acesso restrito ao admin.')
+      return
+    }
+    setSettingsOpen(false)
+    setView('admin')
+  }, [currentUser])
 
   // Stable refs so saveCurrent doesn't churn
   const currentFileIdRef = useRef(currentFileId)
@@ -297,6 +345,8 @@ export default function App() {
   const saveCurrent = useCallback(() => {
     const id = currentFileIdRef.current
     if (!id) return
+    const userId = currentUser?.id
+    if (!userId) return
     setFiles(prev => {
       const target = prev.find(f => f.id === id)
       if (!target) return prev
@@ -315,12 +365,12 @@ export default function App() {
       const newFiles = prev.map(f =>
         f.id === id ? { ...f, content, title, lastModified: Date.now() } : f
       )
-      saveFiles(newFiles)
+      saveFiles(userId, newFiles)
       return newFiles
     })
     setSaved(true)
     setLastSaved(new Date())
-  }, [editor])
+  }, [editor, currentUser])
 
   // Auto-save interval
   useEffect(() => {
@@ -402,7 +452,10 @@ export default function App() {
 
   const handleClearAllData = useCallback(() => {
     try {
-      // Remove known flimas keys — avoid nuking unrelated localStorage entries.
+      const userId = currentUser?.id
+      const userPrefix = userId ? `flimas_u_${userId}_` : null
+      // Remove apenas dados do usuário atual + chaves legacy.
+      // Preserva flimas_auth_v1 (lista de usuários) e flimas_session_v1 (sessão).
       const keysToRemove: string[] = []
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i)
@@ -412,7 +465,7 @@ export default function App() {
           k === 'editor_docs' ||
           k === SETTINGS_KEY ||
           k.startsWith('editor_history_') ||
-          k.startsWith('flimas_')
+          (userPrefix && k.startsWith(userPrefix))
         ) keysToRemove.push(k)
       }
       keysToRemove.forEach(k => localStorage.removeItem(k))
@@ -421,7 +474,7 @@ export default function App() {
     setCurrentFileId(null)
     setView('home')
     setSettingsOpen(false)
-  }, [])
+  }, [currentUser])
 
   const handleOpen = useCallback((id: string) => {
     const file = files.find(f => f.id === id)
@@ -448,10 +501,12 @@ export default function App() {
   }, [files, editor, saveCurrent, isPro])
 
   const handleCreateFromTemplate = useCallback((kind: FileKind, title: string, content: string) => {
+    const userId = currentUser?.id
+    if (!userId) return
     const created = newFile(kind, title, content)
     setFiles(prev => {
       const next = [created, ...prev]
-      saveFiles(next)
+      saveFiles(userId, next)
       return next
     })
     queueMicrotask(() => {
@@ -465,9 +520,11 @@ export default function App() {
       setSaved(true)
       setLastSaved(null)
     })
-  }, [editor])
+  }, [editor, currentUser])
 
   const handleCreate = useCallback((kind: FileKind = 'doc') => {
+    const userId = currentUser?.id
+    if (!userId) return
     // Paywall: Code e Studio (image) só com Pro
     if (isProKind(kind) && !canCreateForPlan(kind, isPro)) {
       const productLabel = kind === 'code' ? 'Flimas Code' : 'Flimas Studio'
@@ -483,7 +540,7 @@ export default function App() {
       const created = newFile(kind, defaultTitle, '')
       setFiles(prev => {
         const next = [created, ...prev]
-        saveFiles(next)
+        saveFiles(userId, next)
         return next
       })
       queueMicrotask(() => {
@@ -497,18 +554,22 @@ export default function App() {
       return
     }
     setTemplatePicker(kind)
-  }, [isPro, openUpgrade])
+  }, [isPro, openUpgrade, currentUser])
 
   const handleDelete = useCallback((id: string) => {
+    const userId = currentUser?.id
+    if (!userId) return
     if (!confirm('Tem certeza que deseja excluir este arquivo? Esta ação não pode ser desfeita.')) return
     setFiles(prev => {
       const next = prev.filter(f => f.id !== id)
-      saveFiles(next)
+      saveFiles(userId, next)
       return next
     })
-  }, [])
+  }, [currentUser])
 
   const handleImport = useCallback(async (file: File) => {
+    const userId = currentUser?.id
+    if (!userId) return
     try {
       const lower = file.name.toLowerCase()
       const baseTitle = file.name.split('.').slice(0, -1).join('.') || file.name
@@ -574,7 +635,7 @@ export default function App() {
 
       setFiles(prev => {
         const next = [created, ...prev]
-        saveFiles(next)
+        saveFiles(userId, next)
         return next
       })
       queueMicrotask(() => handleOpen(created.id))
@@ -582,7 +643,7 @@ export default function App() {
       console.error('Falha ao importar arquivo', err)
       toast.error(`Não foi possível importar "${file.name}". O arquivo pode estar corrompido ou em um formato não suportado.`)
     }
-  }, [handleOpen])
+  }, [handleOpen, currentUser])
 
   const handleBackToDashboard = useCallback(() => {
     saveCurrent()
@@ -593,11 +654,13 @@ export default function App() {
   const handleRestoreVersion = useCallback((snap: Snapshot) => {
     const id = currentFileIdRef.current
     if (!id) return
+    const userId = currentUser?.id
+    if (!userId) return
     setFiles(prev => {
       const next = prev.map(f =>
         f.id === id ? { ...f, title: snap.title, content: snap.content, lastModified: Date.now() } : f
       )
-      saveFiles(next)
+      saveFiles(userId, next)
       return next
     })
     setDocumentTitle(snap.title)
@@ -616,7 +679,7 @@ export default function App() {
     setShowHistory(false)
     setSaved(true)
     setLastSaved(new Date())
-  }, [editor])
+  }, [editor, currentUser])
 
   // Stable refs for shortcuts
   const handleCreateRef = useRef(handleCreate)
@@ -649,13 +712,15 @@ export default function App() {
 
   useEffect(() => {
     if (!currentFileId || view !== 'editor' || readOnly) return
+    const userId = currentUser?.id
+    if (!userId) return
     const interval = setInterval(() => {
       const file = files.find(f => f.id === currentFileId)
       if (!file) return
       const content = file.kind === 'doc' && editor
         ? editor.getHTML()
         : (sheetContentRef.current ?? file.content)
-      pushSnapshot(currentFileId, {
+      pushSnapshot(userId, currentFileId, {
         timestamp: Date.now(),
         title: documentTitle,
         content,
@@ -663,7 +728,7 @@ export default function App() {
       })
     }, 5 * 60 * 1000)
     return () => clearInterval(interval)
-  }, [currentFileId, view, readOnly, files, editor, documentTitle])
+  }, [currentFileId, view, readOnly, files, editor, documentTitle, currentUser])
 
   const handleExportHTML = useCallback(() => {
     if (!editor) return
@@ -808,6 +873,9 @@ ${editor.getHTML()}
       isPro={isPro}
       onTogglePro={setProActive}
       onOpenUpgrade={() => { setSettingsOpen(false); openUpgrade() }}
+      currentUser={currentUser}
+      onLogout={handleLogout}
+      onOpenAdmin={handleOpenAdmin}
     />
   )
 
@@ -824,6 +892,15 @@ ${editor.getHTML()}
 
   const toastHostNode = <ToastHost />
 
+  // Auth gate — sem usuário logado, só mostra a tela de login/registro
+  if (!currentUser) {
+    return (
+      <ErrorBoundary>
+        <AuthScreen onSuccess={handleAuthSuccess} />
+        {toastHostNode}
+      </ErrorBoundary>
+    )
+  }
 
   if (view === 'home') {
     return (
@@ -862,6 +939,24 @@ ${editor.getHTML()}
           onOpenUpgrade={() => openUpgrade()}
         />
         {templateNode}
+        {settingsNode}
+        {upgradeNode}
+        {toastHostNode}
+      </ErrorBoundary>
+    )
+  }
+
+  if (view === 'admin' && currentUser.isAdmin) {
+    return (
+      <ErrorBoundary onReset={() => setView('home')}>
+        <AdminPage
+          currentUser={currentUser}
+          onBack={() => setView('dashboard')}
+          onLogout={handleLogout}
+          onCurrentUserChanged={refreshCurrentUser}
+          darkMode={darkMode}
+          onToggleTheme={handleToggleTheme}
+        />
         {settingsNode}
         {upgradeNode}
         {toastHostNode}
@@ -1314,6 +1409,7 @@ ${editor.getHTML()}
 
       {showHistory && currentFile && (
         <VersionHistory
+          userId={currentUser.id}
           fileId={currentFile.id}
           onRestore={handleRestoreVersion}
           onClose={() => setShowHistory(false)}

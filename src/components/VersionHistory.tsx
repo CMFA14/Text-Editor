@@ -4,6 +4,7 @@ import logoDoc from '../assets/logo-doc.svg'
 import logoSheet from '../assets/logo-sheet.svg'
 
 interface VersionHistoryProps {
+  userId: string
   fileId: string
   onRestore: (snap: Snapshot) => void
   onClose: () => void
@@ -27,12 +28,12 @@ function preview(content: string, kind: Snapshot['kind']): string {
   return text.length > 120 ? text.slice(0, 120) + '…' : (text || '(vazio)')
 }
 
-export default function VersionHistory({ fileId, onRestore, onClose }: VersionHistoryProps) {
+export default function VersionHistory({ userId, fileId, onRestore, onClose }: VersionHistoryProps) {
   const [versions, setVersions] = useState<Snapshot[]>([])
 
   useEffect(() => {
-    setVersions(loadHistory(fileId))
-  }, [fileId])
+    setVersions(loadHistory(userId, fileId))
+  }, [userId, fileId])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
